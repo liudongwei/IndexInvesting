@@ -1,13 +1,22 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { HttpModule } from '@nestjs/axios';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { RolesModule } from './roles/roles.module';
+import { IndicesModule } from './indices/indices.module';
+import { MovingAveragesModule } from './moving-averages/moving-averages.module';
+import { TrendAnalysisModule } from './trend-analysis/trend-analysis.module';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true, // 全局可用
+      envFilePath: '.env',
+    }),
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DB_HOST || 'localhost',
@@ -18,9 +27,13 @@ import { RolesModule } from './roles/roles.module';
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
       synchronize: true, // 开发环境使用，生产环境建议关闭
     }),
+    HttpModule,
     UsersModule,
     AuthModule,
     RolesModule,
+    IndicesModule,
+    MovingAveragesModule,
+    TrendAnalysisModule,
   ],
   controllers: [AppController],
   providers: [AppService],
