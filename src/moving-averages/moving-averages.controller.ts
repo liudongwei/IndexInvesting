@@ -33,44 +33,11 @@ export class MovingAveragesController {
     };
   }
 
-  @Get(':indexId')
-  @ApiOperation({ summary: '获取指定指数的MA数据' })
-  async getMAData(
-    @Param('indexId') indexId: string,
-    @Query('limit') limit: string = '100',
-  ) {
-    const data = await this.maService.getMADataByIndexId(
-      indexId,
-      parseInt(limit, 10),
-    );
-    return {
-      success: true,
-      count: data.length,
-      data,
-    };
-  }
-
-  @Get(':indexId/latest')
-  @ApiOperation({ summary: '获取指定指数的最新MA数据' })
-  async getLatestMA(@Param('indexId') indexId: string) {
-    const data = await this.maService.getLatestMAData(indexId);
-    if (!data) {
-      return {
-        success: false,
-        message: '暂无MA数据',
-      };
-    }
-    return {
-      success: true,
-      data,
-    };
-  }
-
   @Get('ranking/latest')
   @ApiOperation({ summary: '获取所有指数最新MA排名（按偏离率）' })
   async getLatestRanking() {
     const data = await this.maService.getAllLatestMAData();
-    
+
     // 按偏离率降序排列
     const sortedData = data
       .filter((item) => item.deviationRate !== null)
@@ -92,6 +59,39 @@ export class MovingAveragesController {
       success: true,
       count: sortedData.length,
       data: sortedData,
+    };
+  }
+
+  @Get(':indexId/latest')
+  @ApiOperation({ summary: '获取指定指数的最新MA数据' })
+  async getLatestMA(@Param('indexId') indexId: string) {
+    const data = await this.maService.getLatestMAData(indexId);
+    if (!data) {
+      return {
+        success: false,
+        message: '暂无MA数据',
+      };
+    }
+    return {
+      success: true,
+      data,
+    };
+  }
+
+  @Get(':indexId')
+  @ApiOperation({ summary: '获取指定指数的MA数据' })
+  async getMAData(
+    @Param('indexId') indexId: string,
+    @Query('limit') limit: string = '100',
+  ) {
+    const data = await this.maService.getMADataByIndexId(
+      indexId,
+      parseInt(limit, 10),
+    );
+    return {
+      success: true,
+      count: data.length,
+      data,
     };
   }
 }

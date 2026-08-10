@@ -14,16 +14,23 @@ export class MACronService {
 
   /**
    * 定时任务：每天下午4点30分计算MA数据（收盘后）
+   * 使用增量计算模式，只计算新增的数据
    */
   @Cron('30 16 * * *')
   async handleDailyMACalculation() {
-    this.logger.log('执行定时MA计算任务...');
+    this.logger.log('执行定时MA计算任务（增量模式）...');
     try {
       const indices = await this.indicesService.findAll();
       const activeIndices = indices.filter((i) => i.isActive);
 
-      const result = await this.maService.calculateMAForAllIndices(activeIndices);
-      this.logger.log(`定时MA计算完成: ${result.total} 条数据`);
+      // 使用增量计算模式
+      const result = await this.maService.calculateMAForAllIndices(
+        activeIndices,
+        true,
+      );
+      this.logger.log(
+        `定时MA计算完成: ${result.total} 条数据，全量: ${result.fullCalculated} 个，增量: ${result.incrementalCalculated} 个，跳过: ${result.skipped} 个`,
+      );
     } catch (error) {
       this.logger.error(`定时MA计算失败: ${error.message}`);
     }
@@ -31,14 +38,21 @@ export class MACronService {
 
   /**
    * 定时任务：每周日凌晨2点全量重新计算（清理历史数据后重新计算）
+   * 使用全量计算模式，重新计算所有数据
    */
   @Cron(CronExpression.EVERY_WEEKEND)
   async handleWeeklyFullCalculation() {
     this.logger.log('执行每周全量MA计算任务...');
     try {
       const indices = await this.indicesService.findAll();
-      const result = await this.maService.calculateMAForAllIndices(indices);
-      this.logger.log(`每周全量MA计算完成: ${result.total} 条数据`);
+      // 使用全量计算模式（incremental=false）
+      const result = await this.maService.calculateMAForAllIndices(
+        indices,
+        false,
+      );
+      this.logger.log(
+        `每周全量MA计算完成: ${result.total} 条数据，全量: ${result.fullCalculated} 个，增量: ${result.incrementalCalculated} 个`,
+      );
     } catch (error) {
       this.logger.error(`每周全量MA计算失败: ${error.message}`);
     }

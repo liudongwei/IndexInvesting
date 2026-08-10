@@ -1,6 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import { Index } from './entities/index.entity';
 import { IndexHistory } from './entities/index-history.entity';
 import { IndicesService } from './indices.service';
@@ -73,6 +75,7 @@ export class EastmoneyDataService {
     @InjectRepository(IndexHistory)
     private historyRepository: Repository<IndexHistory>,
     private readonly indicesService: IndicesService,
+    private readonly httpService: HttpService,
   ) {
     // 默认数据目录：项目根目录下的 index_data
     this.dataDir = path.resolve(process.cwd(), 'index_data');
@@ -197,10 +200,7 @@ export class EastmoneyDataService {
    * @param filePath JSON文件路径（可选，如果不传则从metadata.data_file读取）
    * @returns 导入结果
    */
-  async importData(
-    indexId: string,
-    filePath?: string,
-  ): Promise<ImportResult> {
+  async importData(indexId: string, filePath?: string): Promise<ImportResult> {
     // 获取指数信息
     const index = await this.indexRepository.findOne({
       where: { id: indexId },
@@ -228,7 +228,9 @@ export class EastmoneyDataService {
       targetFilePath = this.resolveFilePath(dataFile);
     }
 
-    this.logger.log(`开始导入 ${index.name} 的东财数据，文件: ${targetFilePath}`);
+    this.logger.log(
+      `开始导入 ${index.name} 的东财数据，文件: ${targetFilePath}`,
+    );
 
     try {
       // 读取东财数据文件
@@ -319,7 +321,9 @@ export class EastmoneyDataService {
     results: ImportResult[];
   }> {
     // 获取所有 sync_mode=json 的指数
-    const indices = await this.indexRepository.find();
+    const indices = await this.indexRepository.find({
+      order: { createdAt: 'ASC' },
+    });
     const jsonIndices = indices.filter(
       (index) => index.metadata?.sync_mode === 'json',
     );
@@ -394,7 +398,7 @@ export class EastmoneyDataService {
   }> {
     try {
       const resolvedPath = this.resolveFilePath(filePath);
-      
+
       if (!fs.existsSync(resolvedPath)) {
         return {
           success: false,
@@ -420,6 +424,249 @@ export class EastmoneyDataService {
       return {
         success: false,
         message: `预览失败: ${error.message}`,
+      };
+    }
+  }
+
+  /**
+   * 将通用代码转换为东财secid格式
+   * @param code 通用代码，如 sh000300, sz399001, hk00700
+   * @returns 东财secid格式，如 1.000300, 0.399001, 116.00700
+   */
+  private convertToEastmoneySecid(code: string): string {
+    const lowerCode = code.toLowerCase();
+
+    // 上交所 (sh) → 1.xxxxxx
+    if (lowerCode.startsWith('sh')) {
+      return `1.${lowerCode.substring(2)}`;
+    }
+
+    // 深交所 (sz) → 0.xxxxxx
+    if (lowerCode.startsWith('sz')) {
+      return `0.${lowerCode.substring(2)}`;
+    }
+
+    // 港股 (hk) → 116.xxxxxx
+    if (lowerCode.startsWith('hk')) {
+      return `116.${lowerCode.substring(2)}`;
+    }
+
+    // 默认按上交所处理
+    return `1.${lowerCode}`;
+  }
+
+  /**
+   * 从东财API获取K线数据
+   * @param symbol 股票代码，如 sh000300
+   * @param limit 获取条数，默认100
+   * @param endDate 结束日期，格式 YYYY-MM-DD，默认2050-01-01表示获取最新数据
+   */
+  async getKlineFromApi(
+    symbol: string,
+    limit: number = 100,
+    endDate?: string,
+  ): Promise<{
+    success: boolean;
+    data: EastmoneyKlineItem[];
+    code: string;
+    name: string;
+    total: number;
+    message?: string;
+  }> {
+    try {
+      const secid = this.convertToEastmoneySecid(symbol);
+      const end = endDate ? endDate.replace(/-/g, '') : '20500101';
+
+      // 东财API URL
+      // fields1: f1,f2,f3,f4,f5,f6 基础字段
+      // fields2: f51=日期,f52=开盘,f53=收盘,f54=最高,f55=最低,f56=成交量,f57=成交额,f58=涨跌幅
+      // klt=101 日线, fqt=0 不复权
+      const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&end=${end}&lmt=${limit}`;
+
+      this.logger.log(`从东财API获取 ${symbol} 数据，secid: ${secid}`);
+
+      const response = await firstValueFrom(
+        this.httpService.get(url, {
+          timeout: 15000,
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            Accept: 'application/json, text/plain, */*',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+            Referer: 'https://quote.eastmoney.com/',
+          },
+        }),
+      );
+      console.log(response);
+      const json = response.data;
+
+      // 检查返回数据
+      if (!json.data || !json.data.klines || !Array.isArray(json.data.klines)) {
+        return {
+          success: false,
+          data: [],
+          code: symbol,
+          name: json.data?.name || symbol,
+          total: 0,
+          message: '东财API返回数据格式不正确',
+        };
+      }
+
+      const klines: string[] = json.data.klines;
+
+      if (klines.length === 0) {
+        return {
+          success: true,
+          data: [],
+          code: json.data.code || symbol,
+          name: json.data.name || symbol,
+          total: 0,
+          message: '该日期范围内无数据',
+        };
+      }
+
+      // 解析K线数据
+      const parsedData: EastmoneyKlineItem[] = [];
+      for (const klineStr of klines) {
+        const parsed = this.parseKlineString(klineStr);
+        if (parsed) {
+          parsedData.push(parsed);
+        }
+      }
+
+      this.logger.log(
+        `从东财API获取 ${symbol} 数据成功: ${parsedData.length} 条`,
+      );
+
+      return {
+        success: true,
+        data: parsedData,
+        code: json.data.code || symbol,
+        name: json.data.name || symbol,
+        total: parsedData.length,
+      };
+    } catch (error) {
+      this.logger.error(`从东财API获取 ${symbol} 数据失败: ${error.message}`);
+      return {
+        success: false,
+        data: [],
+        code: symbol,
+        name: symbol,
+        total: 0,
+        message: `请求失败: ${error.message}`,
+      };
+    }
+  }
+
+  /**
+   * 从东财API同步数据到数据库
+   * @param indexId 指数ID
+   * @param limit 获取条数
+   * @param endDate 结束日期
+   */
+  async syncFromApi(
+    indexId: string,
+    limit: number = 100,
+    endDate?: string,
+  ): Promise<ImportResult> {
+    // 获取指数信息
+    const index = await this.indexRepository.findOne({
+      where: { id: indexId },
+    });
+
+    if (!index) {
+      throw new NotFoundException(`指数不存在: ${indexId}`);
+    }
+
+    this.logger.log(`开始从东财API同步 ${index.name} 数据`);
+
+    try {
+      // 从API获取数据
+      const apiResult = await this.getKlineFromApi(index.code, limit, endDate);
+
+      if (!apiResult.success) {
+        return {
+          success: false,
+          message: apiResult.message || '从东财API获取数据失败',
+          total: 0,
+          imported: 0,
+          skipped: 0,
+          indexName: index.name,
+          indexCode: index.code,
+        };
+      }
+
+      if (apiResult.data.length === 0) {
+        return {
+          success: true,
+          message: '东财API返回数据为空',
+          total: 0,
+          imported: 0,
+          skipped: 0,
+          indexName: index.name,
+          indexCode: index.code,
+        };
+      }
+
+      // 转换为IndexHistory格式
+      const historyData: Partial<IndexHistory>[] = apiResult.data.map(
+        (item) => ({
+          tradeDate: item.tradeDate,
+          openPrice: item.openPrice,
+          highPrice: item.highPrice,
+          lowPrice: item.lowPrice,
+          closePrice: item.closePrice,
+          volume: item.volume,
+          turnover: item.turnover,
+          changePercent: item.changePercent,
+          changeAmount: null,
+          dataSource: 'eastmoney_api',
+        }),
+      );
+
+      // 保存数据
+      const savedCount = await this.indicesService.saveHistoryData(
+        indexId,
+        historyData,
+      );
+
+      // 更新最后同步日期
+      const lastData = apiResult.data[apiResult.data.length - 1];
+      if (savedCount > 0) {
+        await this.indicesService.updateLastSyncDate(
+          indexId,
+          lastData.tradeDate,
+          savedCount,
+        );
+      }
+
+      const firstData = apiResult.data[0];
+
+      return {
+        success: true,
+        message: `从东财API成功导入 ${savedCount} 条数据`,
+        total: apiResult.data.length,
+        imported: savedCount,
+        skipped: apiResult.data.length - savedCount,
+        indexName: index.name,
+        indexCode: index.code,
+        dateRange: {
+          start: firstData.tradeDate.toISOString().split('T')[0],
+          end: lastData.tradeDate.toISOString().split('T')[0],
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        `从东财API同步 ${index.name} 数据失败: ${error.message}`,
+      );
+      return {
+        success: false,
+        message: `同步失败: ${error.message}`,
+        total: 0,
+        imported: 0,
+        skipped: 0,
+        indexName: index.name,
+        indexCode: index.code,
       };
     }
   }

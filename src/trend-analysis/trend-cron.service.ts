@@ -14,16 +14,21 @@ export class TrendCronService {
 
   /**
    * 定时任务：每天下午5点执行趋势分析（MA计算完成后）
+   * 使用增量计算模式，只计算新增的数据
    */
   @Cron('0 17 * * *')
   async handleDailyTrendAnalysis() {
-    this.logger.log('执行定时趋势分析任务...');
+    this.logger.log('执行定时趋势分析任务（增量模式）...');
     try {
       const indices = await this.indicesService.findAll();
       const activeIndices = indices.filter((i) => i.isActive);
 
-      const result = await this.trendService.performFullAnalysis(activeIndices);
-      this.logger.log(`定时趋势分析完成: ${result.total} 条数据`);
+      // 使用增量计算模式
+      const result =
+        await this.trendService.performIncrementalAnalysis(activeIndices);
+      this.logger.log(
+        `定时趋势分析完成: ${result.total} 条数据，增量: ${result.incrementalCalculated} 个，全量: ${result.fullCalculated} 个，跳过: ${result.skipped} 个`,
+      );
     } catch (error) {
       this.logger.error(`定时趋势分析失败: ${error.message}`);
     }

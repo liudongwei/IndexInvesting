@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, Between } from 'typeorm';
 import { TrendAnalysis } from './entities/trend-analysis.entity';
 import { MovingAverage } from '../moving-averages/entities/moving-average.entity';
 import { IndexHistory } from '../indices/entities/index-history.entity';
@@ -20,6 +20,7 @@ export interface TrendAnalysisResult {
   rank: number;
   rankChange: number;
   totalRankCount: number;
+  indexType: string | null;
 }
 
 @Injectable()
@@ -52,7 +53,8 @@ export class TrendAnalysisService {
 
     // 按日期升序排列
     const sortedMAData = [...maData].sort(
-      (a, b) => new Date(a.tradeDate).getTime() - new Date(b.tradeDate).getTime(),
+      (a, b) =>
+        new Date(a.tradeDate).getTime() - new Date(b.tradeDate).getTime(),
     );
 
     const results: TrendAnalysisResult[] = [];
@@ -67,11 +69,16 @@ export class TrendAnalysisService {
       const tradeDate = current.tradeDate;
 
       // 判断趋势状态：现价高于MA20为above，低于为below
-      const trendStatus: 'above' | 'below' = closePrice >= ma20 ? 'above' : 'below';
+      const trendStatus: 'above' | 'below' =
+        closePrice >= ma20 ? 'above' : 'below';
 
-      // 检测状态转变
-      if (previousStatus !== null && previousStatus !== trendStatus) {
-        // 状态发生转变，记录转变日期和价格
+      // 检测状态转变或首次计算
+      if (previousStatus === null) {
+        // 首次计算，初始化状态转变基准
+        statusChangeDate = tradeDate;
+        statusChangePrice = closePrice;
+      } else if (previousStatus !== trendStatus) {
+        // 状态发生转变，记录转变日期和价格（使用转变当天的价格作为基准）
         statusChangeDate = tradeDate;
         statusChangePrice = closePrice;
       }
@@ -89,7 +96,8 @@ export class TrendAnalysisService {
       // 计算区间涨幅（从状态转变日到当前）
       let intervalChangePercent: number | null = null;
       if (statusChangeDate !== null && statusChangePrice !== null) {
-        intervalChangePercent = ((closePrice - statusChangePrice) / statusChangePrice) * 100;
+        intervalChangePercent =
+          ((closePrice - statusChangePrice) / statusChangePrice) * 100;
       }
 
       // 获取量比（如果有历史数据）
@@ -105,12 +113,14 @@ export class TrendAnalysisService {
         volumeRatio,
         trendStatus,
         statusChangeDate: statusChangeDate ? new Date(statusChangeDate) : null,
-        intervalChangePercent: intervalChangePercent !== null 
-          ? Number(intervalChangePercent.toFixed(4)) 
-          : null,
+        intervalChangePercent:
+          intervalChangePercent !== null
+            ? Number(intervalChangePercent.toFixed(4))
+            : null,
         rank: 0, // 稍后统一计算排名
         rankChange: 0, // 稍后计算
         totalRankCount: allIndicesMAData.size,
+        indexType: index.metadata?.type || null,
       });
 
       previousStatus = trendStatus;
@@ -150,8 +160,10 @@ export class TrendAnalysisService {
         return null;
       }
 
-      const avgVolume = prev5Days.reduce((sum, h) => sum + (Number(h.volume) || 0), 0) / prev5Days.length;
-      
+      const avgVolume =
+        prev5Days.reduce((sum, h) => sum + (Number(h.volume) || 0), 0) /
+        prev5Days.length;
+
       if (avgVolume === 0) return null;
 
       const volumeRatio = Number(currentDay.volume) / avgVolume;
@@ -169,10 +181,10 @@ export class TrendAnalysisService {
     tradeDate: Date,
   ): Map<string, number> {
     const dateStr = this.formatDate(tradeDate);
-    
+
     // 收集该日期所有指数的偏离率
     const deviations: { indexId: string; deviationRate: number }[] = [];
-    
+
     for (const [indexId, results] of allResults.entries()) {
       const result = results.find(
         (r) => this.formatDate(r.tradeDate) === dateStr,
@@ -220,41 +232,115 @@ export class TrendAnalysisService {
 
   /**
    * 保存趋势分析结果
+   * 使用分批处理避免PostgreSQL参数限制（最大65535个参数）
    */
   async saveTrendAnalysis(results: TrendAnalysisResult[]): Promise<number> {
     if (results.length === 0) return 0;
 
-    const entities = results.map((result) =>
-      this.trendRepository.create({
-        ...result,
-      }),
-    );
+    // 每批最多500条记录（500 * 14字段 = 7000参数，远小于65535限制）
+    const BATCH_SIZE = 500;
+    let totalSaved = 0;
 
-    // 使用 upsert 避免重复数据
-    const result = await this.trendRepository.upsert(entities, ['indexId', 'tradeDate']);
-    return result.identifiers?.length || results.length;
+    for (let i = 0; i < results.length; i += BATCH_SIZE) {
+      const batch = results.slice(i, i + BATCH_SIZE);
+
+      const entities = batch.map((result) =>
+        this.trendRepository.create({
+          ...result,
+        }),
+      );
+
+      // 使用 upsert 避免重复数据
+      const result = await this.trendRepository.upsert(entities, [
+        'indexId',
+        'tradeDate',
+      ]);
+      totalSaved += result.identifiers?.length || batch.length;
+
+      this.logger.debug(
+        `趋势分析已保存批次 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(results.length / BATCH_SIZE)}，共 ${batch.length} 条记录`,
+      );
+    }
+
+    return totalSaved;
+  }
+
+  /**
+   * 获取指数最新的趋势分析数据日期
+   */
+  async getLatestTrendAnalysisDate(indexId: string): Promise<Date | null> {
+    const result = await this.trendRepository.findOne({
+      where: { indexId },
+      order: { tradeDate: 'DESC' },
+    });
+    return result ? result.tradeDate : null;
   }
 
   /**
    * 执行完整的趋势分析计算（所有指数）
+   * 根据 indices.metadata.calcTrend 筛选，只有 calcTrend=1 的指数才会计算
+   * @param indices 指数列表
+   * @param startYear 可选，开始年份（如1900）
+   * @param endYear 可选，结束年份（如2000）
    */
-  async performFullAnalysis(indices: Index[]): Promise<{
+  async performFullAnalysis(
+    indices: Index[],
+    startYear?: number,
+    endYear?: number,
+  ): Promise<{
     total: number;
+    skipped: number;
     dateRange: { from: string; to: string } | null;
     results: { indexName: string; count: number }[];
   }> {
-    this.logger.log(`开始执行趋势分析，共 ${indices.length} 个指数...`);
+    // 筛选出需要计算趋势的指数（calcTrend=1 或未设置时默认计算）
+    const indicesToCalculate = indices.filter((index) => {
+      const calcTrend = index.metadata?.calcTrend;
+      // calcTrend=1 或未设置时计算，calcTrend=0 时跳过
+      return calcTrend === 1 || calcTrend === undefined || calcTrend === null;
+    });
 
-    // 1. 收集所有指数的MA数据
+    const skippedCount = indices.length - indicesToCalculate.length;
+
+    const yearRangeStr =
+      startYear || endYear
+        ? ` (${startYear || 'all'}-${endYear || 'all'})`
+        : '';
+
+    this.logger.log(
+      `开始执行趋势分析${yearRangeStr}，共 ${indices.length} 个指数，实际计算 ${indicesToCalculate.length} 个，跳过 ${skippedCount} 个（calcTrend=0）`,
+    );
+
+    if (indicesToCalculate.length === 0) {
+      this.logger.warn(
+        '没有需要计算趋势的指数（请检查 indices.metadata.calcTrend 设置）',
+      );
+      return { total: 0, skipped: skippedCount, dateRange: null, results: [] };
+    }
+
+    // 构建日期范围条件（使用 TypeORM 的 Between）
+    const startDate = startYear ? new Date(`${startYear}-01-01`) : undefined;
+    const endDate = endYear ? new Date(`${endYear}-12-31`) : undefined;
+
+    // 1. 收集所有指数的MA数据（带日期范围过滤）
     const allMADatas = new Map<string, MovingAverage[]>();
     const latestMAs = new Map<string, MovingAverage>();
 
-    for (const index of indices) {
+    for (const index of indicesToCalculate) {
+      const whereCondition: any = { indexId: index.id };
+      if (startDate && endDate) {
+        whereCondition.tradeDate = Between(startDate, endDate);
+      } else if (startDate) {
+        whereCondition.tradeDate = Between(startDate, new Date('2100-12-31'));
+      } else if (endDate) {
+        whereCondition.tradeDate = Between(new Date('1900-01-01'), endDate);
+      }
+
       const maData = await this.maRepository.find({
-        where: { indexId: index.id },
+        where: whereCondition,
         order: { tradeDate: 'ASC' },
       });
-      
+
       if (maData.length > 0) {
         allMADatas.set(index.id, maData);
         latestMAs.set(index.id, maData[maData.length - 1]);
@@ -263,16 +349,20 @@ export class TrendAnalysisService {
 
     if (allMADatas.size === 0) {
       this.logger.warn('没有可用的MA数据');
-      return { total: 0, dateRange: null, results: [] };
+      return { total: 0, skipped: skippedCount, dateRange: null, results: [] };
     }
 
     // 2. 计算每个指数的趋势数据
     const allTrendResults = new Map<string, TrendAnalysisResult[]>();
-    
-    for (const index of indices) {
+
+    for (const index of indicesToCalculate) {
       const maData = allMADatas.get(index.id);
       if (maData) {
-        const results = await this.calculateTrendForIndex(index, maData, latestMAs);
+        const results = await this.calculateTrendForIndex(
+          index,
+          maData,
+          latestMAs,
+        );
         allTrendResults.set(index.id, results);
       }
     }
@@ -285,20 +375,29 @@ export class TrendAnalysisService {
 
     // 4. 对每个日期计算排名和排序变化
     const finalResults: TrendAnalysisResult[] = [];
-    
+    // 用于存储每个指数前一天的排名（内存中计算，避免查询数据库）
+    const previousRanks = new Map<string, number>();
+
     for (const dateStr of Array.from(allDates).sort()) {
       const date = new Date(dateStr);
-      
+
       // 计算该日期的排名
       const rankings = this.calculateRankings(allTrendResults, date);
 
       // 更新每个指数在该日期的排名和排序变化
       for (const [indexId, results] of allTrendResults.entries()) {
-        const result = results.find((r) => this.formatDate(r.tradeDate) === dateStr);
+        const result = results.find(
+          (r) => this.formatDate(r.tradeDate) === dateStr,
+        );
         if (result) {
           const rank = rankings.get(indexId) || 0;
-          const rankChange = await this.calculateRankChange(indexId, rank, date);
-          
+          // 从内存中获取前一天的排名计算变化
+          const prevRank = previousRanks.get(indexId);
+          const rankChange = prevRank !== undefined ? prevRank - rank : 0;
+
+          // 保存当前排名供下一天使用
+          previousRanks.set(indexId, rank);
+
           finalResults.push({
             ...result,
             rank,
@@ -331,14 +430,20 @@ export class TrendAnalysisService {
       if (!maxDate || result.tradeDate > maxDate) maxDate = result.tradeDate;
     }
 
-    this.logger.log(`趋势分析完成，共 ${savedCount} 条数据`);
+    this.logger.log(
+      `趋势分析完成，共 ${savedCount} 条数据，跳过 ${skippedCount} 个指数`,
+    );
 
     return {
       total: savedCount,
-      dateRange: minDate && maxDate ? {
-        from: this.formatDate(minDate),
-        to: this.formatDate(maxDate),
-      } : null,
+      skipped: skippedCount,
+      dateRange:
+        minDate && maxDate
+          ? {
+              from: this.formatDate(minDate),
+              to: this.formatDate(maxDate),
+            }
+          : null,
       results: indexResults,
     };
   }
@@ -361,14 +466,17 @@ export class TrendAnalysisService {
    * 获取最新日期的所有指数趋势分析（用于排名展示）
    */
   async getLatestTrendRanking(): Promise<TrendAnalysis[]> {
-    // 获取最新日期
-    const latestRecord = await this.trendRepository.findOne({
+    // 获取最新日期（使用 find 配合 take:1 替代 findOne）
+    const latestRecords = await this.trendRepository.find({
       order: { tradeDate: 'DESC' },
+      take: 1,
     });
 
-    if (!latestRecord) {
+    if (latestRecords.length === 0) {
       return [];
     }
+
+    const latestRecord = latestRecords[0];
 
     // 获取该日期的所有数据
     const data = await this.trendRepository.find({
@@ -380,6 +488,30 @@ export class TrendAnalysisService {
     return data;
   }
 
+  /**
+   * 获取指定日期的所有指数趋势分析排名
+   * @param date 指定日期（格式：YYYY-MM-DD）
+   */
+  async getTrendRankingByDate(date: string): Promise<TrendAnalysis[]> {
+    const tradeDate = new Date(date);
+
+    // 验证日期格式
+    if (isNaN(tradeDate.getTime())) {
+      throw new Error('无效的日期格式，请使用 YYYY-MM-DD 格式');
+    }
+
+    const data = await this.trendRepository.find({
+      where: { tradeDate },
+      relations: { index: true },
+      order: { rank: 'ASC' },
+    });
+
+    return data;
+  }
+
+  /**
+   * 格式化日期为字符串（兼容Date和字符串类型）
+   */
   private formatDate(date: Date | string): string {
     if (date instanceof Date) {
       return date.toISOString().split('T')[0];
@@ -389,5 +521,391 @@ export class TrendAnalysisService {
       return dateStr.split('T')[0];
     }
     return dateStr;
+  }
+
+  /**
+   * 增量趋势分析：只计算最新趋势日期之后的数据
+   * 适用于每日定时任务，避免重复计算历史数据
+   * @param indices 指数列表
+   */
+  async performIncrementalAnalysis(indices: Index[]): Promise<{
+    total: number;
+    skipped: number;
+    incrementalCalculated: number;
+    fullCalculated: number;
+    results: { indexName: string; count: number }[];
+  }> {
+    // 筛选出需要计算趋势的指数（calcTrend=1 或未设置时默认计算）
+    const indicesToCalculate = indices.filter((index) => {
+      const calcTrend = index.metadata?.calcTrend;
+      return calcTrend === 1 || calcTrend === undefined || calcTrend === null;
+    });
+
+    const skippedCount = indices.length - indicesToCalculate.length;
+
+    this.logger.log(
+      `开始执行增量趋势分析，共 ${indices.length} 个指数，实际计算 ${indicesToCalculate.length} 个，跳过 ${skippedCount} 个（calcTrend=0）`,
+    );
+
+    if (indicesToCalculate.length === 0) {
+      this.logger.warn(
+        '没有需要计算趋势的指数（请检查 indices.metadata.calcTrend 设置）',
+      );
+      return {
+        total: 0,
+        skipped: skippedCount,
+        incrementalCalculated: 0,
+        fullCalculated: 0,
+        results: [],
+      };
+    }
+
+    let incrementalCalculated = 0;
+    let fullCalculated = 0;
+    const allNewResults = new Map<string, TrendAnalysisResult[]>();
+    const indexResults: { indexName: string; count: number }[] = [];
+
+    // 第一步：收集所有指数的新趋势数据（不计算排名）
+    for (const index of indicesToCalculate) {
+      try {
+        const newResults = await this.calculateIncrementalTrendForIndex(index);
+
+        if (newResults.length === 0) {
+          this.logger.debug(`${index.name} 没有新的趋势数据需要计算，跳过`);
+          continue;
+        }
+
+        allNewResults.set(index.id, newResults);
+
+        if (
+          new Date(newResults[0].tradeDate).getTime() ===
+          new Date(newResults[newResults.length - 1].tradeDate).getTime()
+        ) {
+          // 检查是否是全量计算（通过查询是否有历史趋势数据）
+          const hasHistory = await this.trendRepository.count({
+            where: { indexId: index.id },
+            take: 1,
+          });
+          if (hasHistory === 0) {
+            fullCalculated++;
+          } else {
+            incrementalCalculated++;
+          }
+        } else {
+          incrementalCalculated++;
+        }
+      } catch (error) {
+        this.logger.error(
+          `计算 ${index.name} 趋势分析失败: ${error.message}`,
+          error.stack,
+        );
+      }
+    }
+
+    if (allNewResults.size === 0) {
+      this.logger.log('所有指数的趋势数据都已是最新，无需计算');
+      return {
+        total: 0,
+        skipped: skippedCount,
+        incrementalCalculated,
+        fullCalculated,
+        results: [],
+      };
+    }
+
+    // 第二步：统一计算所有日期的排名
+    const allDates = new Set<string>();
+    for (const results of allNewResults.values()) {
+      results.forEach((r) => allDates.add(this.formatDate(r.tradeDate)));
+    }
+
+    // 第三步：对每个日期计算排名和排序变化
+    const finalResults: TrendAnalysisResult[] = [];
+
+    for (const dateStr of Array.from(allDates).sort()) {
+      const date = new Date(dateStr);
+
+      // 计算该日期的排名（包含数据库中已有数据和新计算的数据）
+      const rankings = await this.calculateRankingsForDateIncremental(
+        date,
+        allNewResults,
+      );
+
+      // 更新每个指数在该日期的排名和排序变化
+      for (const [indexId, results] of allNewResults.entries()) {
+        const result = results.find(
+          (r) => this.formatDate(r.tradeDate) === dateStr,
+        );
+        if (result) {
+          const rank = rankings.get(indexId) || 0;
+          // 计算排名变化（查询前一天的排名）
+          const rankChange = await this.calculateRankChange(
+            indexId,
+            rank,
+            date,
+          );
+
+          finalResults.push({
+            ...result,
+            rank,
+            rankChange,
+            totalRankCount: rankings.size,
+          });
+        }
+      }
+    }
+
+    // 第四步：保存所有结果
+    const savedCount = await this.saveTrendAnalysis(finalResults);
+
+    // 统计结果
+    for (const result of finalResults) {
+      const index = indices.find((i) => i.id === result.indexId);
+      if (index) {
+        const existing = indexResults.find((r) => r.indexName === index.name);
+        if (existing) {
+          existing.count++;
+        } else {
+          indexResults.push({ indexName: index.name, count: 1 });
+        }
+      }
+    }
+
+    this.logger.log(
+      `增量趋势分析完成，共 ${savedCount} 条数据，增量: ${incrementalCalculated} 个，全量: ${fullCalculated} 个，跳过: ${skippedCount} 个`,
+    );
+
+    return {
+      total: savedCount,
+      skipped: skippedCount,
+      incrementalCalculated,
+      fullCalculated,
+      results: indexResults,
+    };
+  }
+
+  /**
+   * 为单个指数计算增量趋势数据
+   * @returns 新增的趋势数据（未计算排名）
+   */
+  private async calculateIncrementalTrendForIndex(
+    index: Index,
+  ): Promise<TrendAnalysisResult[]> {
+    // 获取该指数最新的趋势分析日期和最后一条记录（用于状态继承）
+    const latestTrendRecord = await this.trendRepository.findOne({
+      where: { indexId: index.id },
+      order: { tradeDate: 'DESC' },
+    });
+    const latestTrendDate = latestTrendRecord?.tradeDate;
+
+    // 获取MA数据
+    const whereCondition: any = { indexId: index.id };
+    if (latestTrendDate) {
+      // 从最新趋势日期前1天开始（确保能正确继承状态）
+      const startDate = new Date(latestTrendDate);
+      startDate.setDate(startDate.getDate() - 1);
+      whereCondition.tradeDate = Between(startDate, new Date('2100-12-31'));
+    }
+
+    const maData = await this.maRepository.find({
+      where: whereCondition,
+      order: { tradeDate: 'ASC' },
+    });
+
+    if (maData.length === 0) {
+      return [];
+    }
+
+    // 计算趋势数据
+    const results = await this.calculateTrendForIndexIncremental(
+      index,
+      maData,
+      latestTrendRecord,
+    );
+
+    if (results.length === 0) {
+      return [];
+    }
+
+    // 过滤掉已经计算过的日期
+    let newResults = results;
+    if (latestTrendDate) {
+      const latestTrendDateTime = new Date(latestTrendDate).getTime();
+      newResults = results.filter(
+        (r) => new Date(r.tradeDate).getTime() > latestTrendDateTime,
+      );
+    }
+
+    return newResults;
+  }
+
+  /**
+   * 计算单个指数的趋势分析数据（支持增量计算）
+   * @param index 指数信息
+   * @param maData 该指数的MA数据（按日期升序）
+   * @param latestTrendRecord 最新的趋势分析记录（用于继承状态）
+   */
+  private async calculateTrendForIndexIncremental(
+    index: Index,
+    maData: MovingAverage[],
+    latestTrendRecord: TrendAnalysis | null,
+  ): Promise<TrendAnalysisResult[]> {
+    if (maData.length === 0) {
+      return [];
+    }
+
+    // 按日期升序排列
+    const sortedMAData = [...maData].sort(
+      (a, b) =>
+        new Date(a.tradeDate).getTime() - new Date(b.tradeDate).getTime(),
+    );
+
+    const results: TrendAnalysisResult[] = [];
+
+    // 继承之前的状态
+    let previousStatus: 'above' | 'below' | null = null;
+    let statusChangeDate: Date | null = null;
+    let statusChangePrice: number | null = null;
+
+    if (latestTrendRecord) {
+      // 从最后一条记录继承状态
+      previousStatus = latestTrendRecord.trendStatus;
+      statusChangeDate = latestTrendRecord.statusChangeDate;
+      statusChangePrice = latestTrendRecord.closePrice;
+    }
+
+    for (let i = 0; i < sortedMAData.length; i++) {
+      const current = sortedMAData[i];
+      const closePrice = Number(current.closePrice);
+      const ma20 = Number(current.ma20);
+      const tradeDate = current.tradeDate;
+
+      // 判断趋势状态：现价高于MA20为above，低于为below
+      const trendStatus: 'above' | 'below' =
+        closePrice >= ma20 ? 'above' : 'below';
+
+      // 检测状态转变或首次计算
+      if (previousStatus === null) {
+        // 首次计算，初始化状态转变基准
+        statusChangeDate = tradeDate;
+        statusChangePrice = closePrice;
+      } else if (previousStatus !== trendStatus) {
+        // 状态发生转变，记录转变日期和价格
+        statusChangeDate = tradeDate;
+        statusChangePrice = closePrice;
+      }
+
+      // 计算涨幅（相对上一交易日）
+      let changePercent = 0;
+      if (i > 0) {
+        const prevClose = Number(sortedMAData[i - 1].closePrice);
+        changePercent = ((closePrice - prevClose) / prevClose) * 100;
+      }
+
+      // 计算偏离率
+      const deviationRate = ((closePrice - ma20) / ma20) * 100;
+
+      // 计算区间涨幅（从状态转变日到当前）
+      let intervalChangePercent: number | null = null;
+      if (statusChangeDate !== null && statusChangePrice !== null) {
+        intervalChangePercent =
+          ((closePrice - statusChangePrice) / statusChangePrice) * 100;
+      }
+
+      // 获取量比（如果有历史数据）
+      const volumeRatio = await this.calculateVolumeRatio(index.id, tradeDate);
+
+      results.push({
+        indexId: index.id,
+        tradeDate,
+        closePrice,
+        ma20,
+        changePercent: Number(changePercent.toFixed(4)),
+        deviationRate: Number(deviationRate.toFixed(4)),
+        volumeRatio,
+        trendStatus,
+        statusChangeDate: statusChangeDate ? new Date(statusChangeDate) : null,
+        intervalChangePercent:
+          intervalChangePercent !== null
+            ? Number(intervalChangePercent.toFixed(4))
+            : null,
+        rank: 0, // 稍后统一计算排名
+        rankChange: 0, // 稍后计算
+        totalRankCount: 0, // 稍后计算
+        indexType: index.metadata?.type || null,
+      });
+
+      previousStatus = trendStatus;
+    }
+
+    return results;
+  }
+
+  /**
+   * 计算指定日期的所有指数排名（增量计算版本）
+   * 合并数据库中已有数据和新计算的数据
+   */
+  private async calculateRankingsForDateIncremental(
+    tradeDate: Date,
+    newResults: Map<string, TrendAnalysisResult[]>,
+  ): Promise<Map<string, number>> {
+    // 收集该日期所有指数的偏离率
+    const deviations: { indexId: string; deviationRate: number }[] = [];
+
+    // 1. 从数据库中查询该日期的所有趋势数据
+    const trendData = await this.trendRepository.find({
+      where: { tradeDate },
+    });
+
+    for (const item of trendData) {
+      // 如果该指数在新计算结果中，使用新数据；否则使用数据库数据
+      const newResult = newResults
+        .get(item.indexId)
+        ?.find(
+          (r) => this.formatDate(r.tradeDate) === this.formatDate(tradeDate),
+        );
+      if (newResult) {
+        if (newResult.deviationRate !== null) {
+          deviations.push({
+            indexId: item.indexId,
+            deviationRate: newResult.deviationRate,
+          });
+        }
+      } else {
+        if (item.deviationRate !== null) {
+          deviations.push({
+            indexId: item.indexId,
+            deviationRate: item.deviationRate,
+          });
+        }
+      }
+    }
+
+    // 2. 添加新计算但不在数据库中的数据
+    for (const [indexId, results] of newResults.entries()) {
+      const existingInDb = trendData.some((t) => t.indexId === indexId);
+      if (!existingInDb) {
+        const result = results.find(
+          (r) => this.formatDate(r.tradeDate) === this.formatDate(tradeDate),
+        );
+        if (result && result.deviationRate !== null) {
+          deviations.push({
+            indexId,
+            deviationRate: result.deviationRate,
+          });
+        }
+      }
+    }
+
+    // 按偏离率降序排序
+    deviations.sort((a, b) => b.deviationRate - a.deviationRate);
+
+    // 生成排名映射
+    const rankings = new Map<string, number>();
+    deviations.forEach((item, index) => {
+      rankings.set(item.indexId, index + 1);
+    });
+
+    return rankings;
   }
 }
