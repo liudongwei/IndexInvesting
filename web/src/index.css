@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-50;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* 表格样式优化 */
+.data-table {
+  @apply w-full border-collapse;
+}
+
+.data-table th {
+  @apply bg-gray-100 text-gray-700 font-semibold text-sm py-3 px-2 border border-gray-200;
+}
+
+.data-table td {
+  @apply py-2 px-2 border border-gray-200 text-sm;
+}
+
+.data-table tr:hover {
+  @apply bg-gray-50;
+}
+
+/* 涨跌颜色 */
+.trend-up {
+  @apply text-trend-up;
+}
+
+.trend-down {
+  @apply text-trend-down;
+}
+
+/* 偏离率背景色 */
+.deviation-high {
+  @apply bg-red-100;
+}
+
+.deviation-medium {
+  @apply bg-orange-100;
+}
+
+.deviation-low {
+  @apply bg-green-100;
+}
+
+/* 高亮行 */
+.row-highlight {
+  @apply bg-highlight-yellow;
+}
