@@ -23,3 +23,52 @@ export async function getRankingByDate(date: string): Promise<TrendRankingByDate
   }
   return response.json();
 }
+
+/**
+ * 东财指数信息
+ */
+export interface EastmoneyIndex {
+  id: string;
+  code: string;
+  name: string;
+  officialCode?: string;
+  eastmoneyCode: string;
+  eastmoneyUrl: string;
+  lastSyncDate?: string;
+}
+
+/**
+ * 获取所有配置了东财数据源的指数
+ */
+export async function getEastmoneyIndices(): Promise<{ success: boolean; count: number; data: EastmoneyIndex[] }> {
+  const response = await fetch(`${API_BASE_URL}/indices/eastmoney-indices`);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 导入东财JSON数据
+ */
+export async function importEastmoneyJson(data: object, indexId?: string): Promise<{
+  success: boolean;
+  message: string;
+  indexId?: string;
+  indexName?: string;
+  indexCode?: string;
+  total: number;
+  imported: number;
+  skipped: number;
+  dateRange?: { start: string; end: string };
+}> {
+  const response = await fetch(`${API_BASE_URL}/indices/import-eastmoney-json`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data, indexId }),
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+}

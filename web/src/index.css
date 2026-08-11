@@ -26,11 +26,11 @@ body {
 
 /* 涨跌颜色 */
 .trend-up {
-  @apply text-trend-up;
+  @apply text-red-600;
 }
 
 .trend-down {
-  @apply text-trend-down;
+  @apply text-green-600;
 }
 
 /* 偏离率背景色 */
@@ -48,5 +48,5 @@ body {
 
 /* 高亮行 */
 .row-highlight {
-  @apply bg-highlight-yellow;
+  @apply bg-yellow-100;
 }

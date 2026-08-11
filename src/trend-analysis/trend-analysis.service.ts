@@ -524,6 +524,361 @@ export class TrendAnalysisService {
   }
 
   /**
+   * 按日期范围重新计算趋势分析
+   * 先删除指定范围内的旧数据，然后重新计算
+   * @param indices 指数列表
+   * @param startDate 开始日期
+   * @param endDate 结束日期
+   */
+  async recalculateTrendAnalysis(
+    indices: Index[],
+    startDate: Date,
+    endDate: Date,
+  ): Promise<{
+    total: number;
+    deleted: number;
+    dateRange: { from: string; to: string };
+    results: { indexName: string; count: number }[];
+  }> {
+    this.logger.log(
+      `开始重新计算趋势分析，日期范围: ${this.formatDate(startDate)} 至 ${this.formatDate(endDate)}`,
+    );
+
+    // 筛选出需要计算趋势的指数（calcTrend=1 或未设置时默认计算）
+    const indicesToCalculate = indices.filter((index) => {
+      const calcTrend = index.metadata?.calcTrend;
+      return calcTrend === 1 || calcTrend === undefined || calcTrend === null;
+    });
+
+    const skippedCount = indices.length - indicesToCalculate.length;
+
+    if (indicesToCalculate.length === 0) {
+      this.logger.warn('没有需要计算趋势的指数');
+      return {
+        total: 0,
+        deleted: 0,
+        dateRange: {
+          from: this.formatDate(startDate),
+          to: this.formatDate(endDate),
+        },
+        results: [],
+      };
+    }
+
+    // 1. 删除指定日期范围内的旧趋势分析数据
+    const deleteResult = await this.trendRepository
+      .createQueryBuilder()
+      .delete()
+      .from(TrendAnalysis)
+      .where('tradeDate BETWEEN :startDate AND :endDate', {
+        startDate,
+        endDate,
+      })
+      .execute();
+
+    const deletedCount = deleteResult.affected || 0;
+    this.logger.log(`已删除 ${deletedCount} 条旧的趋势分析数据`);
+
+    // 2. 获取需要重新计算的指数ID列表
+    const indexIds = indicesToCalculate.map((i) => i.id);
+
+    // 3. 获取这些指数在日期范围内的MA数据（扩展范围，包含startDate前一天用于计算changePercent）
+    const allMADatas = new Map<string, MovingAverage[]>();
+    const latestMAs = new Map<string, MovingAverage>();
+
+    // 计算扩展的开始日期（前一天）
+    const extendedStartDate = new Date(startDate);
+    extendedStartDate.setDate(extendedStartDate.getDate() - 1);
+
+    for (const index of indicesToCalculate) {
+      const maData = await this.maRepository.find({
+        where: {
+          indexId: index.id,
+          tradeDate: Between(extendedStartDate, endDate),
+        },
+        order: { tradeDate: 'ASC' },
+      });
+
+      if (maData.length > 0) {
+        allMADatas.set(index.id, maData);
+        latestMAs.set(index.id, maData[maData.length - 1]);
+      }
+    }
+
+    if (allMADatas.size === 0) {
+      this.logger.warn('指定日期范围内没有可用的MA数据');
+      return {
+        total: 0,
+        deleted: deletedCount,
+        dateRange: {
+          from: this.formatDate(startDate),
+          to: this.formatDate(endDate),
+        },
+        results: [],
+      };
+    }
+
+    // 4. 获取startDate前一天的趋势分析数据（用于计算rankChange和继承状态）
+    const prevDayTrendData = new Map<string, TrendAnalysis>();
+    const prevDate = new Date(startDate);
+    prevDate.setDate(prevDate.getDate() - 1);
+
+    for (const index of indicesToCalculate) {
+      const prevTrend = await this.trendRepository.findOne({
+        where: {
+          indexId: index.id,
+          tradeDate: prevDate,
+        },
+      });
+      if (prevTrend) {
+        prevDayTrendData.set(index.id, prevTrend);
+      }
+    }
+
+    // 5. 计算每个指数的趋势数据（使用扩展的MA数据）
+    const allTrendResults = new Map<string, TrendAnalysisResult[]>();
+
+    for (const index of indicesToCalculate) {
+      const maData = allMADatas.get(index.id);
+      if (maData) {
+        // 获取该指数在startDate之前的最新趋势记录（用于继承状态）
+        const prevTrend = await this.trendRepository.findOne({
+          where: {
+            indexId: index.id,
+            tradeDate: LessThan(startDate),
+          },
+          order: { tradeDate: 'DESC' },
+        });
+
+        const results = await this.calculateTrendForIndexWithHistory(
+          index,
+          maData,
+          latestMAs,
+          prevTrend,
+          startDate,
+        );
+        allTrendResults.set(index.id, results);
+      }
+    }
+
+    // 6. 获取所有日期，按日期计算排名
+    const allDates = new Set<string>();
+    for (const results of allTrendResults.values()) {
+      results.forEach((r) => allDates.add(this.formatDate(r.tradeDate)));
+    }
+
+    // 7. 对每个日期计算排名和排序变化
+    const finalResults: TrendAnalysisResult[] = [];
+    // 用于存储每个指数前一天的排名（内存中计算，避免查询数据库）
+    const previousRanks = new Map<string, number>();
+
+    // 初始化前一天的排名（从数据库获取）
+    for (const [indexId, prevTrend] of prevDayTrendData.entries()) {
+      previousRanks.set(indexId, prevTrend.rank);
+    }
+
+    for (const dateStr of Array.from(allDates).sort()) {
+      const date = new Date(dateStr);
+
+      // 计算该日期的排名
+      const rankings = this.calculateRankings(allTrendResults, date);
+
+      // 更新每个指数在该日期的排名和排序变化
+      for (const [indexId, results] of allTrendResults.entries()) {
+        const result = results.find(
+          (r) => this.formatDate(r.tradeDate) === dateStr,
+        );
+        if (result) {
+          const rank = rankings.get(indexId) || 0;
+          // 从内存中获取前一天的排名计算变化
+          const prevRank = previousRanks.get(indexId);
+          const rankChange = prevRank !== undefined ? prevRank - rank : 0;
+
+          // 保存当前排名供下一天使用
+          previousRanks.set(indexId, rank);
+
+          finalResults.push({
+            ...result,
+            rank,
+            rankChange,
+          });
+        }
+      }
+    }
+
+    // 8. 保存结果
+    const savedCount = await this.saveTrendAnalysis(finalResults);
+
+    // 9. 统计结果
+    const indexResults: { indexName: string; count: number }[] = [];
+
+    for (const result of finalResults) {
+      const index = indices.find((i) => i.id === result.indexId);
+      if (index) {
+        const existing = indexResults.find((r) => r.indexName === index.name);
+        if (existing) {
+          existing.count++;
+        } else {
+          indexResults.push({ indexName: index.name, count: 1 });
+        }
+      }
+    }
+
+    this.logger.log(
+      `趋势分析重新计算完成，删除 ${deletedCount} 条，新增 ${savedCount} 条，跳过 ${skippedCount} 个指数`,
+    );
+
+    return {
+      total: savedCount,
+      deleted: deletedCount,
+      dateRange: {
+        from: this.formatDate(startDate),
+        to: this.formatDate(endDate),
+      },
+      results: indexResults,
+    };
+  }
+
+  /**
+   * 计算单个指数的趋势分析数据（支持历史状态继承）
+   * @param index 指数信息
+   * @param maData 该指数的MA数据（按日期升序，可能包含startDate前一天的数据）
+   * @param allIndicesMAData 所有指数的最新MA数据（用于排名）
+   * @param prevTrendRecord 最新的历史趋势记录（用于继承状态）
+   * @param actualStartDate 实际开始日期（用于过滤结果）
+   */
+  private async calculateTrendForIndexWithHistory(
+    index: Index,
+    maData: MovingAverage[],
+    allIndicesMAData: Map<string, MovingAverage>,
+    prevTrendRecord: TrendAnalysis | null,
+    actualStartDate: Date,
+  ): Promise<TrendAnalysisResult[]> {
+    if (maData.length === 0) {
+      return [];
+    }
+
+    // 按日期升序排列
+    const sortedMAData = [...maData].sort(
+      (a, b) =>
+        new Date(a.tradeDate).getTime() - new Date(b.tradeDate).getTime(),
+    );
+
+    const results: TrendAnalysisResult[] = [];
+
+    // 继承之前的状态
+    let previousStatus: 'above' | 'below' | null = null;
+    let statusChangeDate: Date | null = null;
+    let statusChangePrice: number | null = null;
+
+    if (prevTrendRecord) {
+      // 从历史记录继承状态
+      previousStatus = prevTrendRecord.trendStatus;
+      statusChangeDate = prevTrendRecord.statusChangeDate;
+      // 反推状态转变日的价格：statusChangePrice = closePrice / (1 + intervalChangePercent/100)
+      // 当 intervalChangePercent 为 0 时，statusChangePrice = closePrice
+      statusChangePrice =
+        prevTrendRecord.closePrice /
+        (1 + (prevTrendRecord.intervalChangePercent || 0) / 100);
+    }
+
+    for (let i = 0; i < sortedMAData.length; i++) {
+      const current = sortedMAData[i];
+      const closePrice = Number(current.closePrice);
+      const ma20 = Number(current.ma20);
+      const tradeDate = current.tradeDate;
+
+      // 只处理 >= actualStartDate 的数据
+      if (new Date(tradeDate) < new Date(actualStartDate)) {
+        // 更新状态，但不保存结果
+        const trendStatus: 'above' | 'below' =
+          closePrice >= ma20 ? 'above' : 'below';
+
+        if (previousStatus === null) {
+          statusChangeDate = tradeDate;
+          statusChangePrice = closePrice;
+        } else if (previousStatus !== trendStatus) {
+          statusChangeDate = tradeDate;
+          statusChangePrice = closePrice;
+        }
+
+        previousStatus = trendStatus;
+        continue;
+      }
+
+      // 判断趋势状态：现价高于MA20为above，低于为below
+      const trendStatus: 'above' | 'below' =
+        closePrice >= ma20 ? 'above' : 'below';
+
+      // 保存旧的状态转变信息用于计算区间涨幅
+      const oldStatusChangePrice = statusChangePrice;
+      const oldStatusChangeDate = statusChangeDate;
+
+      // 检测状态转变或首次计算
+      if (previousStatus === null) {
+        // 首次计算，初始化状态转变基准
+        statusChangeDate = tradeDate;
+        statusChangePrice = closePrice;
+      } else if (previousStatus !== trendStatus) {
+        // 状态发生转变，记录转变日期和价格
+        statusChangeDate = tradeDate;
+        statusChangePrice = closePrice;
+      }
+
+      // 计算涨幅（相对上一交易日）- 使用MA数据中的前一条
+      let changePercent = 0;
+      if (i > 0) {
+        const prevClose = Number(sortedMAData[i - 1].closePrice);
+        changePercent = ((closePrice - prevClose) / prevClose) * 100;
+      }
+
+      // 计算偏离率
+      const deviationRate = ((closePrice - ma20) / ma20) * 100;
+
+      // 计算区间涨幅（从状态转变日到当前）
+      // 注意：如果状态在今天发生转变，区间涨幅应该从转变前的价格开始计算
+      let intervalChangePercent: number | null = null;
+      if (statusChangeDate !== null && statusChangePrice !== null) {
+        // 如果状态在今天发生转变，使用转变前的价格作为基准
+        // 否则使用状态转变日的价格
+        const basePrice =
+          oldStatusChangeDate !== statusChangeDate &&
+          oldStatusChangePrice !== null
+            ? oldStatusChangePrice
+            : statusChangePrice;
+        intervalChangePercent = ((closePrice - basePrice) / basePrice) * 100;
+      }
+
+      // 获取量比（如果有历史数据）
+      const volumeRatio = await this.calculateVolumeRatio(index.id, tradeDate);
+
+      results.push({
+        indexId: index.id,
+        tradeDate,
+        closePrice,
+        ma20,
+        changePercent: Number(changePercent.toFixed(4)),
+        deviationRate: Number(deviationRate.toFixed(4)),
+        volumeRatio,
+        trendStatus,
+        statusChangeDate: statusChangeDate ? new Date(statusChangeDate) : null,
+        intervalChangePercent:
+          intervalChangePercent !== null
+            ? Number(intervalChangePercent.toFixed(4))
+            : null,
+        rank: 0, // 稍后统一计算排名
+        rankChange: 0, // 稍后计算
+        totalRankCount: allIndicesMAData.size,
+        indexType: index.metadata?.type || null,
+      });
+
+      previousStatus = trendStatus;
+    }
+
+    return results;
+  }
+
+  /**
    * 增量趋势分析：只计算最新趋势日期之后的数据
    * 适用于每日定时任务，避免重复计算历史数据
    * @param indices 指数列表

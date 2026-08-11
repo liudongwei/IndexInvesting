@@ -732,42 +732,38 @@ export class IndexSyncService {
   }
 
   /**
-   * 定时任务：每小时检查一次（用于补数据）
-   * A股15:00收盘，延迟5分钟（15:05）同步
-   * 港股16:00收盘，延迟5分钟（16:05）同步
+   * 定时任务：A股收盘后同步（15:05）
+   * A股交易时间 9:30-15:00，延迟5分钟后同步
    */
-  @Cron(CronExpression.EVERY_HOUR)
-  async handleHourlyCheck() {
-    const now = new Date();
-    const hour = now.getHours();
-    const minute = now.getMinutes();
-
-    // A股交易时间 9:30-15:00，延迟5分钟后同步（15:05-15:10）
-    if (hour === 15 && minute >= 5 && minute < 10) {
-      this.logger.log('A股交易时间结束（延迟5分钟），执行数据同步...');
-      try {
-        const result = await this.syncIndicesByMarket(
-          (index) => this.isChinaAStock(index),
-          'A股指数',
-        );
-        this.logger.log(`A股定时同步完成: ${result.total} 条数据`);
-      } catch (error) {
-        this.logger.error(`A股定时同步失败: ${error.message}`);
-      }
+  @Cron('5 15 * * *')
+  async handleAStockSync() {
+    this.logger.log('A股交易时间结束（延迟5分钟），执行数据同步...');
+    try {
+      const result = await this.syncIndicesByMarket(
+        (index) => this.isChinaAStock(index),
+        'A股指数',
+      );
+      this.logger.log(`A股定时同步完成: ${result.total} 条数据`);
+    } catch (error) {
+      this.logger.error(`A股定时同步失败: ${error.message}`);
     }
+  }
 
-    // 港股交易时间 9:30-16:00，延迟5分钟后同步（16:05-16:10）
-    if (hour === 16 && minute >= 5 && minute < 10) {
-      this.logger.log('港股交易时间结束（延迟5分钟），执行数据同步...');
-      try {
-        const result = await this.syncIndicesByMarket(
-          (index) => this.isHongKongStock(index),
-          '港股指数',
-        );
-        this.logger.log(`港股定时同步完成: ${result.total} 条数据`);
-      } catch (error) {
-        this.logger.error(`港股定时同步失败: ${error.message}`);
-      }
+  /**
+   * 定时任务：港股收盘后同步（16:05）
+   * 港股交易时间 9:30-16:00，延迟5分钟后同步
+   */
+  @Cron('5 16 * * *')
+  async handleHKStockSync() {
+    this.logger.log('港股交易时间结束（延迟5分钟），执行数据同步...');
+    try {
+      const result = await this.syncIndicesByMarket(
+        (index) => this.isHongKongStock(index),
+        '港股指数',
+      );
+      this.logger.log(`港股定时同步完成: ${result.total} 条数据`);
+    } catch (error) {
+      this.logger.error(`港股定时同步失败: ${error.message}`);
     }
   }
 }

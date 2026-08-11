@@ -15,31 +15,46 @@ export function RankingTable({ data, loading }: RankingTableProps) {
   };
 
   // 格式化数字，保留指定小数位
-  const formatNumber = (num: number | null, digits: number = 2) => {
-    if (num === null || num === undefined) return '-';
-    return num.toFixed(digits);
+  const formatNumber = (
+    num: number | string | null | undefined,
+    digits: number = 2,
+  ) => {
+    if (num === null || num === undefined || num === '') return '-';
+    const n = typeof num === 'string' ? parseFloat(num) : num;
+    if (isNaN(n)) return '-';
+    return n.toFixed(digits);
   };
 
   // 格式化百分比
-  const formatPercent = (num: number | null, digits: number = 2) => {
-    if (num === null || num === undefined) return '-';
-    const sign = num > 0 ? '+' : '';
-    return `${sign}${num.toFixed(digits)}%`;
+  const formatPercent = (
+    num: number | string | null | undefined,
+    digits: number = 2,
+  ) => {
+    if (num === null || num === undefined || num === '') return '-';
+    const n = typeof num === 'string' ? parseFloat(num) : num;
+    if (isNaN(n)) return '-';
+    const sign = n > 0 ? '+' : '';
+    return `${sign}${n.toFixed(digits)}%`;
   };
 
   // 获取涨跌样式
-  const getTrendClass = (num: number | null) => {
-    if (num === null || num === undefined) return '';
-    return num >= 0 ? 'trend-up' : 'trend-down';
+  const getTrendClass = (num: number | string | null | undefined) => {
+    if (num === null || num === undefined || num === '') return '';
+    const n = typeof num === 'string' ? parseFloat(num) : num;
+    if (isNaN(n)) return '';
+    return n >= 0 ? 'trend-up' : 'trend-down';
   };
 
   // 获取偏离率背景色
-  const getDeviationBgClass = (rate: number) => {
-    if (rate >= 2) return 'bg-red-200';
-    if (rate >= 1) return 'bg-red-100';
-    if (rate >= 0) return 'bg-orange-50';
-    if (rate >= -1) return 'bg-green-50';
-    if (rate >= -2) return 'bg-green-100';
+  const getDeviationBgClass = (rate: number | string | null | undefined) => {
+    if (rate === null || rate === undefined || rate === '') return '';
+    const r = typeof rate === 'string' ? parseFloat(rate) : rate;
+    if (isNaN(r)) return '';
+    if (r >= 2) return 'bg-red-200';
+    if (r >= 1) return 'bg-red-100';
+    if (r >= 0) return 'bg-orange-50';
+    if (r >= -1) return 'bg-green-50';
+    if (r >= -2) return 'bg-green-100';
     return 'bg-green-200';
   };
 
@@ -58,8 +73,11 @@ export function RankingTable({ data, loading }: RankingTableProps) {
   };
 
   // 判断是否高亮显示（偏离率在0附近）
-  const shouldHighlight = (rate: number) => {
-    return rate >= -0.2 && rate <= 0.2;
+  const shouldHighlight = (rate: number | string | null | undefined) => {
+    if (rate === null || rate === undefined || rate === '') return false;
+    const r = typeof rate === 'string' ? parseFloat(rate) : rate;
+    if (isNaN(r)) return false;
+    return r >= -0.2 && r <= 0.2;
   };
 
   if (loading) {

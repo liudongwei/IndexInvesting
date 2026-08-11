@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  UsePipes,
+  ValidationPipe,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { IndicesService } from './indices.service';
 import { IndexSyncService } from './index-sync.service';
@@ -11,6 +22,7 @@ import {
   BulkUpdateMetadataDto,
 } from './dto/update-metadata.dto';
 import { ResyncDto, BulkResyncDto } from './dto/resync.dto';
+import { ImportEastmoneyJsonDto } from './dto/import-eastmoney-json.dto';
 
 @ApiTags('大盘指数管理')
 @Controller('indices')
@@ -52,6 +64,77 @@ export class IndicesController {
       return { success: false, message: '指数不存在' };
     }
     return index;
+  }
+
+  @Get('eastmoney-indices')
+  @ApiOperation({
+    summary: '获取所有配置了东财数据源的指数',
+    description:
+      '返回所有metadata.data_source为eastmoney/easymoney或配置了eastmoneyCode的指数列表，包含东财网页链接。',
+  })
+  async getEastmoneyIndices() {
+    try {
+      const indices = await this.eastmoneyDataService.getEastmoneyIndices();
+      return {
+        success: true,
+        count: indices.length,
+        data: indices,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `获取失败: ${error.message}`,
+        data: [],
+      };
+    }
+  }
+
+  @Post('import-eastmoney-json')
+  @UsePipes()
+  @ApiOperation({
+    summary: '人工导入东财JSON数据',
+    description: `直接提交东财JSON数据对象进行导入。系统会根据market.code自动匹配指数，或可通过indexId手动指定。
+
+匹配规则：
+- 优先匹配metadata.eastmoneyCode字段
+- 其次根据code自动匹配：1.xxx→shxxx, 0.xxx→szxxx, 2.xxx→bjxxx
+
+示例数据格式：
+{
+  "rc": 0,
+  "rt": 17,
+  "svr": 181669690,
+  "lt": 1,
+  "full": 0,
+  "dlmkts": "",
+  "dsc": "0",
+  "data": {
+    "code": "932000",
+    "market": 2,
+    "name": "中证2000",
+    "decimal": 2,
+    "dktotal": 3066,
+    "preKPrice": 2920.82,
+    "klines": [
+      "2026-08-05,2917.80,3000.29,3006.64,2917.50,294193994,406909826043.00,3.05"
+    ]
+  }
+}`,
+  })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async importEastmoneyJson(@Body() body: any) {
+    try {
+      const result = await this.eastmoneyDataService.importFromJson(body);
+      return result;
+    } catch (error) {
+      return {
+        success: false,
+        message: `导入失败: ${error.message}`,
+        total: 0,
+        imported: 0,
+        skipped: 0,
+      };
+    }
   }
 
   @Get(':id')

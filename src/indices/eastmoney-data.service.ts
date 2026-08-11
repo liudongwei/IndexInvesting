@@ -6,6 +6,10 @@ import { firstValueFrom } from 'rxjs';
 import { Index } from './entities/index.entity';
 import { IndexHistory } from './entities/index-history.entity';
 import { IndicesService } from './indices.service';
+import {
+  ImportEastmoneyJsonDto,
+  ImportJsonResult,
+} from './dto/import-eastmoney-json.dto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -450,9 +454,8 @@ export class EastmoneyDataService {
     if (lowerCode.startsWith('hk')) {
       return `116.${lowerCode.substring(2)}`;
     }
-
-    // 默认按上交所处理
-    return `1.${lowerCode}`;
+    
+    return lowerCode;
   }
 
   /**
@@ -477,11 +480,11 @@ export class EastmoneyDataService {
       const secid = this.convertToEastmoneySecid(symbol);
       const end = endDate ? endDate.replace(/-/g, '') : '20500101';
 
-      // 东财API URL
+      // 东财API URL - 使用http协议避免SSL问题
       // fields1: f1,f2,f3,f4,f5,f6 基础字段
       // fields2: f51=日期,f52=开盘,f53=收盘,f54=最高,f55=最低,f56=成交量,f57=成交额,f58=涨跌幅
       // klt=101 日线, fqt=0 不复权
-      const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&end=${end}&lmt=${limit}`;
+      const url = `http://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&end=${end}&lmt=${limit}`;
 
       this.logger.log(`从东财API获取 ${symbol} 数据，secid: ${secid}`);
 
@@ -490,14 +493,26 @@ export class EastmoneyDataService {
           timeout: 15000,
           headers: {
             'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            Accept: 'application/json, text/plain, */*',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-            Referer: 'https://quote.eastmoney.com/',
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0',
+            Accept:
+              'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br, zstd',
+            Referer: 'http://quote.eastmoney.com/',
+            'Sec-Ch-Ua':
+              '"Not=A?Brand";v="99", "Microsoft Edge";v="151", "Chromium";v="151"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'cross-site',
+            'Upgrade-Insecure-Requests': '1',
+            Cookie:
+              'qgqp_b_id=22d0c62bbfb12b65ba9c3a227c934252; st_nvi=Mw4dPIqnl9zo20GRCaieD06f7; nid18=03fa2b707091e5183102f32f91ae0660; gviem=RohHdgavjfO1oyXSygDEU4a2a; st_pvi=65100160481951; st_sp=2026-08-11%2011%3A25%3A16; st_inirUrl=https%3A%2F%2Fquote.eastmoney.com%2F; st_sn=3; st_psi=20260811113950914-111000300841-1244538174',
           },
         }),
       );
-      console.log(response);
+      console.log(response.data);
       const json = response.data;
 
       // 检查返回数据
@@ -667,6 +682,421 @@ export class EastmoneyDataService {
         skipped: 0,
         indexName: index.name,
         indexCode: index.code,
+      };
+    }
+  }
+
+  /**
+   * 将东财market和code组合成查询用的code格式
+   * @param market 市场代码 (0=深交所, 1=上交所, 2=北交所等)
+   * @param code 指数代码
+   * @returns 组合后的code，如 0.399001, 1.000300, 2.932000
+   */
+  private composeEastmoneyCode(market: number, code: string): string {
+    return `${market}.${code}`;
+  }
+
+  /**
+   * 根据东财code查找对应的指数
+   * @param eastmoneyCode 东财格式的code，如 0.399001, 1.000300
+   * @returns 指数实体或null
+   */
+  private async findIndexByEastmoneyCode(
+    eastmoneyCode: string,
+  ): Promise<Index | null> {
+    // 首先尝试精确匹配metadata.eastmoneyCode
+    const indices = await this.indexRepository.find();
+
+    for (const index of indices) {
+      // 检查metadata中是否配置了东财代码
+      if (index.metadata?.eastmoneyCode === eastmoneyCode) {
+        return index;
+      }
+      // 检查code字段是否匹配（去掉前缀后）
+      const indexCodeLower = index.code.toLowerCase();
+      const [marketStr, codeStr] = eastmoneyCode.split('.');
+
+      // 上交所 1.xxx -> shxxx
+      if (marketStr === '1' && indexCodeLower === `sh${codeStr}`) {
+        return index;
+      }
+      // 深交所 0.xxx -> szxxx
+      if (marketStr === '0' && indexCodeLower === `sz${codeStr}`) {
+        return index;
+      }
+      // 北交所 2.xxx -> bjxxx
+      if (marketStr === '2' && indexCodeLower === `bj${codeStr}`) {
+        return index;
+      }
+      if (index.code === eastmoneyCode) {
+        return index;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 检查指定日期是否是当天且交易未结束
+   * A股交易时间：9:30-11:30, 13:00-15:00
+   * @param tradeDate 交易日期
+   * @returns 如果是当天且交易未结束返回true
+   */
+  private isTodayAndTradingNotEnded(tradeDate: Date): boolean {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tradeDay = new Date(
+      tradeDate.getFullYear(),
+      tradeDate.getMonth(),
+      tradeDate.getDate(),
+    );
+
+    // 如果不是当天，直接返回false
+    if (tradeDay.getTime() !== today.getTime()) {
+      return false;
+    }
+
+    // 获取当前时间（小时和分钟）
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTime = currentHour * 60 + currentMinute; // 转换为分钟数
+
+    // A股交易结束时间：15:00 = 15 * 60 = 900 分钟
+    const tradingEndTime = 15 * 60;
+
+    // 如果当前时间早于15:00，说明交易未结束
+    return currentTime < tradingEndTime;
+  }
+
+  /**
+   * 人工导入东财JSON数据
+   * @param dto 包含东财JSON数据的DTO
+   * @returns 导入结果
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async importFromJson(body: any): Promise<ImportJsonResult> {
+    // 支持两种格式：
+    // 1. { data: 东财JSON, indexId?: string }
+    // 2. 东财JSON 直接作为 body
+
+    let eastmoneyData: any;
+    let indexId: string | undefined;
+
+    // 判断格式
+    if (body.data && body.data.data && Array.isArray(body.data.data.klines)) {
+      // 格式1：嵌套在 data 字段中
+      eastmoneyData = body.data;
+      indexId = body.indexId;
+    } else if (body.data && Array.isArray(body.data.klines)) {
+      // 格式2：直接是东财JSON
+      eastmoneyData = body;
+      indexId = undefined;
+    } else {
+      return {
+        success: false,
+        message: '东财JSON数据格式不正确，缺少klines数组',
+        total: 0,
+        imported: 0,
+        skipped: 0,
+      };
+    }
+
+    // 验证数据格式
+    if (
+      !eastmoneyData?.data?.klines ||
+      !Array.isArray(eastmoneyData.data.klines)
+    ) {
+      return {
+        success: false,
+        message: '东财JSON数据格式不正确，缺少klines数组',
+        total: 0,
+        imported: 0,
+        skipped: 0,
+      };
+    }
+
+    const { market, code, name, klines } = eastmoneyData.data;
+    const eastmoneyCode = this.composeEastmoneyCode(market, code);
+
+    this.logger.log(`开始处理东财JSON数据: ${eastmoneyCode} (${name})`);
+
+    try {
+      // 查找对应的指数
+      let index: Index | null = null;
+
+      if (indexId) {
+        // 如果指定了indexId，直接查找
+        index = await this.indexRepository.findOne({ where: { id: indexId } });
+        if (!index) {
+          return {
+            success: false,
+            message: `指定的指数ID不存在: ${indexId}`,
+            total: 0,
+            imported: 0,
+            skipped: 0,
+          };
+        }
+      } else {
+        // 自动根据code查找
+        index = await this.findIndexByEastmoneyCode(eastmoneyCode);
+        if (!index) {
+          return {
+            success: false,
+            message: `未找到匹配的指数: ${eastmoneyCode} (${name})，请在metadata中配置eastmoneyCode或通过indexId指定`,
+            total: 0,
+            imported: 0,
+            skipped: 0,
+          };
+        }
+      }
+
+      this.logger.log(`匹配到指数: ${index.name} (${index.code})`);
+
+      // 转换数据并过滤掉当天交易未结束的数据
+      const historyData: Partial<IndexHistory>[] = [];
+      let skippedTodayCount = 0;
+
+      for (const klineStr of klines) {
+        const parsed = this.parseKlineString(klineStr);
+        if (parsed) {
+          // 检查是否是当天且交易未结束
+          if (this.isTodayAndTradingNotEnded(parsed.tradeDate)) {
+            this.logger.log(
+              `跳过当天交易未结束的数据: ${parsed.tradeDate.toISOString().split('T')[0]}`,
+            );
+            skippedTodayCount++;
+            continue;
+          }
+          historyData.push({
+            tradeDate: parsed.tradeDate,
+            openPrice: parsed.openPrice,
+            highPrice: parsed.highPrice,
+            lowPrice: parsed.lowPrice,
+            closePrice: parsed.closePrice,
+            volume: parsed.volume,
+            turnover: parsed.turnover,
+            changePercent: parsed.changePercent,
+            changeAmount: null,
+            dataSource: 'eastmoney',
+          });
+        }
+      }
+
+      if (historyData.length === 0) {
+        const message =
+          skippedTodayCount > 0
+            ? `东财JSON数据中包含 ${skippedTodayCount} 条当天交易未结束的数据，已跳过。无有效数据可导入。`
+            : '东财JSON数据中没有有效的K线数据';
+        return {
+          success: true,
+          message,
+          indexId: index.id,
+          indexName: index.name,
+          indexCode: index.code,
+          total: klines.length,
+          imported: 0,
+          skipped: klines.length,
+        };
+      }
+
+      // 获取日期范围
+      const firstParsed = historyData[0]?.tradeDate;
+      const lastParsed = historyData[historyData.length - 1]?.tradeDate;
+
+      // 保存数据（只新增增量数据）
+      const savedCount = await this.indicesService.saveHistoryData(
+        index.id,
+        historyData,
+      );
+
+      // 更新最后同步日期
+      if (savedCount > 0 && lastParsed) {
+        await this.indicesService.updateLastSyncDate(
+          index.id,
+          lastParsed,
+          savedCount,
+        );
+      }
+
+      const result: ImportJsonResult = {
+        success: true,
+        message: `成功导入 ${savedCount} 条数据，跳过 ${klines.length - savedCount} 条（其中 ${skippedTodayCount} 条为当天交易未结束）`,
+        indexId: index.id,
+        indexName: index.name,
+        indexCode: index.code,
+        total: klines.length,
+        imported: savedCount,
+        skipped: klines.length - savedCount,
+        dateRange: {
+          start: firstParsed?.toISOString().split('T')[0] || '',
+          end: lastParsed?.toISOString().split('T')[0] || '',
+        },
+      };
+
+      this.logger.log(
+        `${index.name} 东财JSON数据导入完成: ${result.imported}/${result.total} 条`,
+      );
+
+      return result;
+    } catch (error) {
+      this.logger.error(`导入东财JSON数据失败: ${error.message}`, error.stack);
+      return {
+        success: false,
+        message: `导入失败: ${error.message}`,
+        total: 0,
+        imported: 0,
+        skipped: 0,
+      };
+    }
+  }
+
+  /**
+   * 获取所有配置了东财数据源的指数
+   * @returns 东财数据源指数列表
+   */
+  async getEastmoneyIndices(): Promise<
+    {
+      id: string;
+      code: string;
+      name: string;
+      officialCode?: string;
+      eastmoneyCode: string;
+      eastmoneyUrl: string;
+      lastSyncDate?: Date;
+    }[]
+  > {
+    const indices = await this.indexRepository.find({
+      order: { createdAt: 'ASC' },
+    });
+
+    return indices
+      .filter((index) => index.metadata?.data_source === 'easymoney')
+      .map((index) => {
+        // 构建东财代码
+        let eastmoneyCode = index.code;
+
+        // 构建东财网页URL - 使用http协议
+        const eastmoneyUrl = eastmoneyCode
+          ? `http://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${eastmoneyCode}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=1&end=20500101&lmt=10`
+          : '';
+
+        https: return {
+          id: index.id,
+          code: index.code,
+          name: index.name,
+          officialCode: index.officialCode,
+          eastmoneyCode: eastmoneyCode || '',
+          eastmoneyUrl,
+          lastSyncDate: index.lastSyncDate || undefined,
+        };
+      })
+      .filter((item) => item.eastmoneyCode); // 过滤掉无法转换的
+  }
+
+  /**
+   * 从东财API获取数据并直接导入（一键同步）
+   * @param indexId 指数ID
+   * @param limit 获取条数，默认500
+   * @returns 导入结果
+   */
+  async fetchAndImportFromEastmoney(
+    indexId: string,
+    limit: number = 500,
+  ): Promise<ImportJsonResult> {
+    // 获取指数信息
+    const index = await this.indexRepository.findOne({
+      where: { id: indexId },
+    });
+
+    if (!index) {
+      return {
+        success: false,
+        message: `指数不存在: ${indexId}`,
+        total: 0,
+        imported: 0,
+        skipped: 0,
+      };
+    }
+
+    // 获取东财代码
+    let eastmoneyCode = index.metadata?.eastmoneyCode;
+    if (!eastmoneyCode) {
+      const codeLower = index.code.toLowerCase();
+      if (codeLower.startsWith('sh')) {
+        eastmoneyCode = `1.${codeLower.substring(2)}`;
+      } else if (codeLower.startsWith('sz')) {
+        eastmoneyCode = `0.${codeLower.substring(2)}`;
+      } else if (codeLower.startsWith('bj')) {
+        eastmoneyCode = `2.${codeLower.substring(2)}`;
+      }
+    }
+
+    if (!eastmoneyCode) {
+      return {
+        success: false,
+        message: `无法确定东财代码: ${index.code}，请在metadata中配置eastmoneyCode`,
+        total: 0,
+        imported: 0,
+        skipped: 0,
+      };
+    }
+
+    this.logger.log(
+      `开始从东财API获取 ${index.name} 数据，code: ${eastmoneyCode}`,
+    );
+
+    try {
+      // 调用东财API - 使用http协议避免SSL问题
+      const url = `http://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${eastmoneyCode}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&end=20500101&lmt=${limit}`;
+
+      const response = await firstValueFrom(
+        this.httpService.get(url, {
+          timeout: 30000,
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0',
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br, zstd',
+            Referer: 'http://quote.eastmoney.com/',
+            'Sec-Ch-Ua': '"Not=A?Brand";v="99", "Microsoft Edge";v="151", "Chromium";v="151"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'cross-site',
+            'Upgrade-Insecure-Requests': '1',
+            Cookie: 'qgqp_b_id=22d0c62bbfb12b65ba9c3a227c934252; st_nvi=Mw4dPIqnl9zo20GRCaieD06f7; nid18=03fa2b707091e5183102f32f91ae0660; gviem=RohHdgavjfO1oyXSygDEU4a2a; st_pvi=65100160481951; st_sp=2026-08-11%2011%3A25%3A16; st_inirUrl=https%3A%2F%2Fquote.eastmoney.com%2F; st_sn=3; st_psi=20260811113950914-111000300841-1244538174',
+          },
+        }),
+      );
+
+      const jsonData = response.data;
+
+      // 验证数据
+      if (!jsonData?.data?.klines || !Array.isArray(jsonData.data.klines)) {
+        return {
+          success: false,
+          message: '东财API返回数据格式不正确',
+          total: 0,
+          imported: 0,
+          skipped: 0,
+        };
+      }
+
+      // 使用现有的importFromJson方法导入数据
+      return await this.importFromJson({
+        data: jsonData as any,
+        indexId: index.id,
+      });
+    } catch (error) {
+      this.logger.error(`从东财API获取数据失败: ${error.message}`);
+      return {
+        success: false,
+        message: `从东财API获取数据失败: ${error.message}`,
+        total: 0,
+        imported: 0,
+        skipped: 0,
       };
     }
   }
