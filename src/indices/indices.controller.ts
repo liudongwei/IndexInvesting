@@ -23,6 +23,7 @@ import {
 } from './dto/update-metadata.dto';
 import { ResyncDto, BulkResyncDto } from './dto/resync.dto';
 import { ImportEastmoneyJsonDto } from './dto/import-eastmoney-json.dto';
+import { UpdateEastmoneyCookieDto } from './dto/update-eastmoney-cookie.dto';
 
 @ApiTags('大盘指数管理')
 @Controller('indices')
@@ -529,5 +530,18 @@ export class IndicesController {
       isNaN(limitNum) ? 10 : limitNum,
     );
     return result;
+  }
+
+  @Post('eastmoney/cookie')
+  @ApiOperation({ summary: '更新东财 Cookie' })
+  @UsePipes(new ValidationPipe())
+  updateEastmoneyCookie(@Body() dto: UpdateEastmoneyCookieDto) {
+    return this.eastmoneyDataService.updateCookie(dto.cookie);
+  }
+
+  @Get('eastmoney/cookie-status')
+  @ApiOperation({ summary: '获取东财 Cookie 状态' })
+  getEastmoneyCookieStatus() {
+    return this.eastmoneyDataService.getConfigStatus();
   }
 }

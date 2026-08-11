@@ -7,12 +7,14 @@ import { MACronService } from './ma-cron.service';
 import { MovingAverage } from './entities/moving-average.entity';
 import { IndexHistory } from '../indices/entities/index-history.entity';
 import { IndicesModule } from '../indices/indices.module';
+import { TrendAnalysisModule } from '../trend-analysis/trend-analysis.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([MovingAverage, IndexHistory]),
     ScheduleModule.forRoot(),
     IndicesModule,
+    TrendAnalysisModule,
   ],
   controllers: [MovingAveragesController],
   providers: [MovingAveragesService, MACronService],

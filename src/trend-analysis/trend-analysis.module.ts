@@ -17,6 +17,6 @@ import { IndicesModule } from '../indices/indices.module';
   ],
   controllers: [TrendAnalysisController],
   providers: [TrendAnalysisService, TrendCronService],
-  exports: [TrendAnalysisService],
+  exports: [TrendAnalysisService, TrendCronService],
 })
 export class TrendAnalysisModule {}

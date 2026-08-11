@@ -72,6 +72,10 @@ export interface ImportResult {
 export class EastmoneyDataService {
   private readonly logger = new Logger(EastmoneyDataService.name);
   private readonly dataDir: string;
+  private readonly eastmoneyConfig: {
+    cookie: string;
+    headers: Record<string, string>;
+  };
 
   constructor(
     @InjectRepository(Index)
@@ -83,6 +87,114 @@ export class EastmoneyDataService {
   ) {
     // 默认数据目录：项目根目录下的 index_data
     this.dataDir = path.resolve(process.cwd(), 'index_data');
+    // 加载东财配置
+    this.eastmoneyConfig = this.loadEastmoneyConfig();
+  }
+
+  /**
+   * 加载东财配置文件
+   * 配置文件路径: config/eastmoney.config.json
+   */
+  private loadEastmoneyConfig(): {
+    cookie: string;
+    headers: Record<string, string>;
+  } {
+    const configPath = path.resolve(
+      process.cwd(),
+      'config',
+      'eastmoney.config.json',
+    );
+    try {
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        this.logger.log('已加载东财配置文件');
+        return {
+          cookie: config.cookie || '',
+          headers: config.headers || {},
+        };
+      }
+    } catch (error) {
+      this.logger.warn(`加载东财配置文件失败: ${error.message}`);
+    }
+    // 默认配置
+    return {
+      cookie: '',
+      headers: {},
+    };
+  }
+
+  /**
+   * 获取东财请求头
+   */
+  private getEastmoneyHeaders(): Record<string, string> {
+    return {
+      ...this.eastmoneyConfig.headers,
+      Cookie: this.eastmoneyConfig.cookie,
+    };
+  }
+
+  /**
+   * 更新东财 Cookie
+   * @param cookie 新的 Cookie 字符串
+   * @returns 更新结果
+   */
+  updateCookie(cookie: string): { success: boolean; message: string } {
+    try {
+      const configPath = path.resolve(
+        process.cwd(),
+        'config',
+        'eastmoney.config.json',
+      );
+
+      // 读取现有配置
+      let config: Record<string, any> = {};
+      if (fs.existsSync(configPath)) {
+        config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      }
+
+      // 更新 Cookie
+      config.cookie = cookie;
+      config.lastUpdated = new Date().toISOString();
+
+      // 确保目录存在
+      const configDir = path.dirname(configPath);
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+
+      // 写入文件
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+
+      // 更新内存中的配置
+      this.eastmoneyConfig.cookie = cookie;
+
+      this.logger.log('东财 Cookie 已更新');
+      return {
+        success: true,
+        message: 'Cookie 更新成功',
+      };
+    } catch (error) {
+      this.logger.error(`更新 Cookie 失败: ${error.message}`);
+      return {
+        success: false,
+        message: `更新失败: ${error.message}`,
+      };
+    }
+  }
+
+  /**
+   * 获取当前东财配置状态
+   */
+  getConfigStatus(): {
+    hasCookie: boolean;
+    cookieLength: number;
+    lastUpdated?: string;
+  } {
+    return {
+      hasCookie: !!this.eastmoneyConfig.cookie,
+      cookieLength: this.eastmoneyConfig.cookie.length,
+      lastUpdated: this.eastmoneyConfig.headers?.['lastUpdated'] as string,
+    };
   }
 
   /**
@@ -454,7 +566,7 @@ export class EastmoneyDataService {
     if (lowerCode.startsWith('hk')) {
       return `116.${lowerCode.substring(2)}`;
     }
-    
+
     return lowerCode;
   }
 
@@ -491,25 +603,7 @@ export class EastmoneyDataService {
       const response = await firstValueFrom(
         this.httpService.get(url, {
           timeout: 15000,
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0',
-            Accept:
-              'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Accept-Encoding': 'gzip, deflate, br, zstd',
-            Referer: 'http://quote.eastmoney.com/',
-            'Sec-Ch-Ua':
-              '"Not=A?Brand";v="99", "Microsoft Edge";v="151", "Chromium";v="151"',
-            'Sec-Ch-Ua-Mobile': '?0',
-            'Sec-Ch-Ua-Platform': '"Windows"',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'cross-site',
-            'Upgrade-Insecure-Requests': '1',
-            Cookie:
-              'qgqp_b_id=22d0c62bbfb12b65ba9c3a227c934252; st_nvi=Mw4dPIqnl9zo20GRCaieD06f7; nid18=03fa2b707091e5183102f32f91ae0660; gviem=RohHdgavjfO1oyXSygDEU4a2a; st_pvi=65100160481951; st_sp=2026-08-11%2011%3A25%3A16; st_inirUrl=https%3A%2F%2Fquote.eastmoney.com%2F; st_sn=3; st_psi=20260811113950914-111000300841-1244538174',
-          },
+          headers: this.getEastmoneyHeaders(),
         }),
       );
       console.log(response.data);
@@ -1052,22 +1146,7 @@ export class EastmoneyDataService {
       const response = await firstValueFrom(
         this.httpService.get(url, {
           timeout: 30000,
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0',
-            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Accept-Encoding': 'gzip, deflate, br, zstd',
-            Referer: 'http://quote.eastmoney.com/',
-            'Sec-Ch-Ua': '"Not=A?Brand";v="99", "Microsoft Edge";v="151", "Chromium";v="151"',
-            'Sec-Ch-Ua-Mobile': '?0',
-            'Sec-Ch-Ua-Platform': '"Windows"',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'cross-site',
-            'Upgrade-Insecure-Requests': '1',
-            Cookie: 'qgqp_b_id=22d0c62bbfb12b65ba9c3a227c934252; st_nvi=Mw4dPIqnl9zo20GRCaieD06f7; nid18=03fa2b707091e5183102f32f91ae0660; gviem=RohHdgavjfO1oyXSygDEU4a2a; st_pvi=65100160481951; st_sp=2026-08-11%2011%3A25%3A16; st_inirUrl=https%3A%2F%2Fquote.eastmoney.com%2F; st_sn=3; st_psi=20260811113950914-111000300841-1244538174',
-          },
+          headers: this.getEastmoneyHeaders(),
         }),
       );
 
