@@ -231,6 +231,196 @@ export class TrendAnalysisService {
   }
 
   /**
+   * 填充节假日数据
+   * 对于每个日期，如果某个指数没有数据，则复制该指数上一个交易日的数据
+   * 确保即使某些市场休市（如日本节假日），该指数仍会出现在排名中
+   * @param indices 指数列表
+   * @param startDate 开始日期
+   * @param endDate 结束日期
+   * @returns 填充的数据条数
+   */
+  async fillHolidayData(
+    indices: Index[],
+    startDate: Date,
+    endDate: Date,
+  ): Promise<number> {
+    let filledCount = 0;
+
+    // 获取日期范围内所有应该有数据的日期（至少有一个指数有数据的日期）
+    const allDates = new Set<string>();
+    
+    // 从MA数据中获取所有日期
+    const maDates = await this.maRepository
+      .createQueryBuilder('ma')
+      .select('DISTINCT ma.tradeDate', 'date')
+      .where('ma.tradeDate BETWEEN :startDate AND :endDate', {
+        startDate,
+        endDate,
+      })
+      .getRawMany();
+    
+    maDates.forEach((d) => allDates.add(this.formatDate(d.date)));
+
+    if (allDates.size === 0) {
+      return 0;
+    }
+
+    this.logger.log(
+      `开始填充节假日数据，日期范围: ${this.formatDate(startDate)} 至 ${this.formatDate(endDate)}，共 ${allDates.size} 个日期`,
+    );
+
+    // 按日期排序
+    const sortedDates = Array.from(allDates).sort();
+
+    // 为每个指数填充缺失的日期数据
+    for (const index of indices) {
+      // 获取该指数在日期范围内已有的趋势数据
+      const existingData = await this.trendRepository.find({
+        where: {
+          indexId: index.id,
+          tradeDate: Between(startDate, endDate),
+        },
+        order: { tradeDate: 'ASC' },
+      });
+
+      const existingDates = new Set(
+        existingData.map((d) => this.formatDate(d.tradeDate)),
+      );
+
+      // 获取该指数在startDate之前的最新趋势数据（用于填充第一个缺失日期）
+      let lastTrendData = await this.trendRepository.findOne({
+        where: {
+          indexId: index.id,
+          tradeDate: LessThan(startDate),
+        },
+        order: { tradeDate: 'DESC' },
+      });
+
+      // 如果没有历史数据，使用已有的第一条数据作为基准
+      if (!lastTrendData && existingData.length > 0) {
+        lastTrendData = existingData[0];
+      }
+
+      if (!lastTrendData) {
+        // 该指数完全没有历史数据，跳过
+        continue;
+      }
+
+      // 检查每个日期，填充缺失的数据
+      for (const dateStr of sortedDates) {
+        if (existingDates.has(dateStr)) {
+          // 该日期已有数据，更新lastTrendData
+          const currentData = existingData.find(
+            (d) => this.formatDate(d.tradeDate) === dateStr,
+          );
+          if (currentData) {
+            lastTrendData = currentData;
+          }
+          continue;
+        }
+
+        // 确保 lastTrendData 不为 null
+        if (!lastTrendData) {
+          continue;
+        }
+
+        // 该日期没有数据，复制上一个交易日的数据
+        const holidayData = {
+          indexId: index.id,
+          tradeDate: new Date(dateStr),
+          closePrice: lastTrendData.closePrice,
+          ma20: lastTrendData.ma20,
+          changePercent: lastTrendData.changePercent, // 继承上一交易日的涨跌幅
+          deviationRate: lastTrendData.deviationRate,
+          volumeRatio: null, // 节假日无量比
+          trendStatus: lastTrendData.trendStatus,
+          statusChangeDate: lastTrendData.statusChangeDate,
+          intervalChangePercent: lastTrendData.intervalChangePercent,
+          rank: 0, // 稍后统一计算
+          rankChange: 0,
+          totalRankCount: 0,
+          indexType: index.metadata?.type || null,
+        };
+
+        this.logger.debug(
+          `[${index.name}] 填充 ${dateStr} 数据，changePercent: ${holidayData.changePercent}, 来源日期: ${this.formatDate(lastTrendData.tradeDate)}`,
+        );
+
+        // 使用 upsert 避免唯一约束冲突
+        await this.trendRepository.upsert(holidayData, ['indexId', 'tradeDate']);
+        filledCount++;
+
+        // 更新 lastTrendData 为当前填充的数据，用于后续连续节假日的填充
+        lastTrendData = { ...lastTrendData, ...holidayData, id: lastTrendData.id };
+      }
+    }
+
+    if (filledCount > 0) {
+      this.logger.log(`节假日数据填充完成，共填充 ${filledCount} 条数据`);
+      
+      // 重新计算所有受影响的日期的排名
+      await this.recalculateRankingsForDates(sortedDates);
+    }
+
+    return filledCount;
+  }
+
+  /**
+   * 重新计算指定日期范围内所有日期的排名
+   * @param dates 日期字符串数组（格式：YYYY-MM-DD）
+   */
+  private async recalculateRankingsForDates(dates: string[]): Promise<void> {
+    this.logger.log(`重新计算 ${dates.length} 个日期的排名...`);
+
+    for (const dateStr of dates) {
+      const tradeDate = new Date(dateStr);
+
+      // 获取该日期所有指数的趋势数据
+      const allTrendData = await this.trendRepository.find({
+        where: { tradeDate },
+      });
+
+      if (allTrendData.length === 0) {
+        continue;
+      }
+
+      // 按偏离率降序排序
+      const sortedData = [...allTrendData].sort(
+        (a, b) => (b.deviationRate || 0) - (a.deviationRate || 0),
+      );
+
+      // 获取前一天的排名数据
+      const prevDate = new Date(tradeDate);
+      prevDate.setDate(prevDate.getDate() - 1);
+      const prevDayData = await this.trendRepository.find({
+        where: { tradeDate: prevDate },
+      });
+      const prevRankMap = new Map(
+        prevDayData.map((d) => [d.indexId, d.rank]),
+      );
+
+      // 更新排名
+      for (let i = 0; i < sortedData.length; i++) {
+        const item = sortedData[i];
+        const newRank = i + 1;
+        const prevRank = prevRankMap.get(item.indexId);
+        const rankChange = prevRank !== undefined ? prevRank - newRank : 0;
+
+        await this.trendRepository.update(
+          { id: item.id },
+          {
+            rank: newRank,
+            rankChange,
+            totalRankCount: sortedData.length,
+          },
+        );
+      }
+    }
+
+    this.logger.log('排名重新计算完成');
+  }
+
+  /**
    * 保存趋势分析结果
    * 使用分批处理避免PostgreSQL参数限制（最大65535个参数）
    */
@@ -430,12 +620,22 @@ export class TrendAnalysisService {
       if (!maxDate || result.tradeDate > maxDate) maxDate = result.tradeDate;
     }
 
+    // 7. 填充节假日数据（为休市的指数复制上一交易日数据）
+    let filledCount = 0;
+    if (minDate && maxDate) {
+      filledCount = await this.fillHolidayData(
+        indicesToCalculate,
+        minDate,
+        maxDate,
+      );
+    }
+
     this.logger.log(
-      `趋势分析完成，共 ${savedCount} 条数据，跳过 ${skippedCount} 个指数`,
+      `趋势分析完成，共 ${savedCount} 条数据，填充节假日数据 ${filledCount} 条，跳过 ${skippedCount} 个指数`,
     );
 
     return {
-      total: savedCount,
+      total: savedCount + filledCount,
       skipped: skippedCount,
       dateRange:
         minDate && maxDate
@@ -709,7 +909,14 @@ export class TrendAnalysisService {
     // 8. 保存结果
     const savedCount = await this.saveTrendAnalysis(finalResults);
 
-    // 9. 统计结果
+    // 9. 填充节假日数据（为休市的指数复制上一交易日数据）
+    const filledCount = await this.fillHolidayData(
+      indicesToCalculate,
+      startDate,
+      endDate,
+    );
+
+    // 10. 统计结果
     const indexResults: { indexName: string; count: number }[] = [];
 
     for (const result of finalResults) {
@@ -725,11 +932,11 @@ export class TrendAnalysisService {
     }
 
     this.logger.log(
-      `趋势分析重新计算完成，删除 ${deletedCount} 条，新增 ${savedCount} 条，跳过 ${skippedCount} 个指数`,
+      `趋势分析重新计算完成，删除 ${deletedCount} 条，新增 ${savedCount} 条，填充节假日数据 ${filledCount} 条，跳过 ${skippedCount} 个指数`,
     );
 
     return {
-      total: savedCount,
+      total: savedCount + filledCount,
       deleted: deletedCount,
       dateRange: {
         from: this.formatDate(startDate),
@@ -1014,6 +1221,8 @@ export class TrendAnalysisService {
     const savedCount = await this.saveTrendAnalysis(finalResults);
 
     // 统计结果
+    let minDate: Date | null = null;
+    let maxDate: Date | null = null;
     for (const result of finalResults) {
       const index = indices.find((i) => i.id === result.indexId);
       if (index) {
@@ -1024,14 +1233,27 @@ export class TrendAnalysisService {
           indexResults.push({ indexName: index.name, count: 1 });
         }
       }
+
+      if (!minDate || result.tradeDate < minDate) minDate = result.tradeDate;
+      if (!maxDate || result.tradeDate > maxDate) maxDate = result.tradeDate;
+    }
+
+    // 第五步：填充节假日数据（为休市的指数复制上一交易日数据）
+    let filledCount = 0;
+    if (minDate && maxDate) {
+      filledCount = await this.fillHolidayData(
+        indicesToCalculate,
+        minDate,
+        maxDate,
+      );
     }
 
     this.logger.log(
-      `增量趋势分析完成，共 ${savedCount} 条数据，增量: ${incrementalCalculated} 个，全量: ${fullCalculated} 个，跳过: ${skippedCount} 个`,
+      `增量趋势分析完成，共 ${savedCount} 条数据，填充节假日数据 ${filledCount} 条，增量: ${incrementalCalculated} 个，全量: ${fullCalculated} 个，跳过: ${skippedCount} 个`,
     );
 
     return {
-      total: savedCount,
+      total: savedCount + filledCount,
       skipped: skippedCount,
       incrementalCalculated,
       fullCalculated,

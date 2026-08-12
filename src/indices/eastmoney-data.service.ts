@@ -567,7 +567,7 @@ export class EastmoneyDataService {
       return `116.${lowerCode.substring(2)}`;
     }
 
-    return lowerCode;
+    return code;
   }
 
   /**

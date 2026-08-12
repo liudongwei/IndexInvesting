@@ -355,6 +355,11 @@ export class IndexSyncService {
   /**
    * 按日期范围重新同步数据
    * 用于修复指定日期范围内的数据
+   * 根据 metadata.data_source 选择数据源：
+   * - 'tencent': 腾讯API（默认）
+   * - 'sina': 新浪API
+   * - 'easymoney': 东财API
+   * - 其他/未设置: 腾讯API
    * @param index 指数对象
    * @param startDate 开始日期，格式 YYYY-MM-DD
    * @param endDate 结束日期，格式 YYYY-MM-DD
@@ -374,13 +379,53 @@ export class IndexSyncService {
     );
 
     try {
-      // 1. 从API获取指定日期范围的数据
-      const data = await this.indexDataService.getTencentKlineByDateRange(
-        index.code,
-        startDate,
-        endDate,
-        1000,
-      );
+      // 获取数据源配置
+      const dataSource = index.metadata?.data_source || 'tencent';
+      let data: KlineData[];
+      let source: string;
+
+      if (dataSource === 'easymoney') {
+        // 东财API - 获取足够多的数据，然后过滤日期范围
+        this.logger.log(`[${index.name}] 使用东财API重新同步`);
+        const limit = 1000; // 获取足够多的数据
+        const result = await this.eastmoneyDataService.getKlineFromApi(
+          index.code,
+          limit,
+          endDate.replace(/-/g, ''), // 转换为YYYYMMDD格式
+        );
+        if (!result.success) {
+          throw new Error(`东财API获取失败: ${result.message}`);
+        }
+        // 过滤日期范围
+        data = result.data
+          .map((item) => ({
+            date: item.tradeDate.toISOString().split('T')[0],
+            open: item.openPrice,
+            high: item.highPrice,
+            low: item.lowPrice,
+            close: item.closePrice,
+            volume: item.volume,
+            amount: item.turnover,
+          }))
+          .filter((item) => item.date >= startDate && item.date <= endDate);
+        source = 'easymoney';
+      } else if (dataSource === 'sina') {
+        // 新浪API - 获取数据后过滤日期范围
+        this.logger.log(`[${index.name}] 使用新浪API重新同步`);
+        const sinaData = await this.indexDataService.getSinaKline(index.code, 1000);
+        data = sinaData.filter((item) => item.date >= startDate && item.date <= endDate);
+        source = 'sina';
+      } else {
+        // 腾讯API（默认）
+        this.logger.log(`[${index.name}] 使用腾讯API重新同步`);
+        data = await this.indexDataService.getTencentKlineByDateRange(
+          index.code,
+          startDate,
+          endDate,
+          1000,
+        );
+        source = 'tencent';
+      }
 
       if (data.length === 0) {
         return {
@@ -391,10 +436,10 @@ export class IndexSyncService {
         };
       }
 
-      this.logger.log(`[${index.name}] 从API获取到 ${data.length} 条数据`);
+      this.logger.log(`[${index.name}] 从${source} API获取到 ${data.length} 条数据`);
 
       // 2. 转换数据
-      const historyData = this.convertToHistoryData(data, 'tencent');
+      const historyData = this.convertToHistoryData(data, source);
 
       // 3. 删除该日期范围内的旧数据
       const deletedCount = await this.indicesService.deleteHistoryByDateRange(
