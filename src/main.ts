@@ -6,6 +6,12 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // 设置全局路由前缀（从环境变量读取，默认 api）
+  const apiPrefix = process.env.API_PREFIX || 'api';
+  if (apiPrefix) {
+    app.setGlobalPrefix(apiPrefix);
+  }
+
   // 启用 CORS
   app.enableCors({
     origin: true,
@@ -33,7 +39,11 @@ async function bootstrap() {
   SwaggerModule.setup('api-docs', app, document);
 
   await app.listen(process.env.PORT ?? 3000);
-  console.log(`Application is running on: http://localhost:${process.env.PORT ?? 3000}`);
-  console.log(`Swagger docs: http://localhost:${process.env.PORT ?? 3000}/api-docs`);
+  console.log(
+    `Application is running on: http://localhost:${process.env.PORT ?? 3000}`,
+  );
+  console.log(
+    `Swagger docs: http://localhost:${process.env.PORT ?? 3000}/api-docs`,
+  );
 }
 bootstrap();
