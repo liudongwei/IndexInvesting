@@ -36,7 +36,6 @@ export class IndicesService {
   async findOne(id: string): Promise<Index> {
     const index = await this.indexRepository.findOne({
       where: { id },
-      relations: { histories: true },
     });
     if (!index) {
       throw new NotFoundException(`Index with ID ${id} not found`);
@@ -83,6 +82,11 @@ export class IndicesService {
     indexId: string,
     limit: number = 100,
   ): Promise<IndexHistory[]> {
+    // 验证 UUID 格式
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(indexId)) {
+      throw new NotFoundException(`无效的指数ID格式: ${indexId}`);
+    }
     return this.historyRepository.find({
       where: { indexId },
       order: { tradeDate: 'DESC' },

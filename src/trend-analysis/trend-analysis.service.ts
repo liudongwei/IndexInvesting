@@ -324,6 +324,13 @@ export class TrendAnalysisService {
           continue;
         }
 
+        // 跳过周末（周六和周日）
+        const dateObj = new Date(dateStr);
+        const dayOfWeek = dateObj.getDay();
+        if (dayOfWeek === 0 || dayOfWeek === 6) {
+          continue; // 周日=0，周六=6
+        }
+
         // 该日期没有数据，复制上一个交易日的数据
         const holidayData = {
           indexId: index.id,

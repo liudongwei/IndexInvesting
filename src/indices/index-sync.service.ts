@@ -384,10 +384,16 @@ export class IndexSyncService {
       let data: KlineData[];
       let source: string;
 
+      // 根据日期范围计算合理的limit（考虑交易日约250天/年，加20%缓冲）
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      const tradingDays = Math.max(Math.ceil(daysDiff * 0.7), 10); // 按70%交易日估算，最少10条
+      const limit = Math.ceil(tradingDays * 1.2); // 加20%缓冲
+
       if (dataSource === 'easymoney') {
         // 东财API - 获取足够多的数据，然后过滤日期范围
-        this.logger.log(`[${index.name}] 使用东财API重新同步`);
-        const limit = 1000; // 获取足够多的数据
+        this.logger.log(`[${index.name}] 使用东财API重新同步，计算limit: ${limit}`);
         const result = await this.eastmoneyDataService.getKlineFromApi(
           index.code,
           limit,
@@ -411,18 +417,18 @@ export class IndexSyncService {
         source = 'easymoney';
       } else if (dataSource === 'sina') {
         // 新浪API - 获取数据后过滤日期范围
-        this.logger.log(`[${index.name}] 使用新浪API重新同步`);
-        const sinaData = await this.indexDataService.getSinaKline(index.code, 1000);
+        this.logger.log(`[${index.name}] 使用新浪API重新同步，计算limit: ${limit}`);
+        const sinaData = await this.indexDataService.getSinaKline(index.code, limit);
         data = sinaData.filter((item) => item.date >= startDate && item.date <= endDate);
         source = 'sina';
       } else {
         // 腾讯API（默认）
-        this.logger.log(`[${index.name}] 使用腾讯API重新同步`);
+        this.logger.log(`[${index.name}] 使用腾讯API重新同步，计算limit: ${limit}`);
         data = await this.indexDataService.getTencentKlineByDateRange(
           index.code,
           startDate,
           endDate,
-          1000,
+          limit,
         );
         source = 'tencent';
       }

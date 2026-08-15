@@ -508,30 +508,6 @@ export class IndicesController {
     };
   }
 
-  @Get('preview-eastmoney')
-  @ApiOperation({
-    summary: '预览东财JSON文件内容',
-    description: '预览指定东财JSON文件的前N条数据，不保存到数据库。',
-  })
-  async previewEastmoney(
-    @Query('filePath') filePath: string,
-    @Query('limit') limit: string = '10',
-  ) {
-    if (!filePath) {
-      return {
-        success: false,
-        message: '请提供文件路径参数 filePath',
-      };
-    }
-
-    const limitNum = parseInt(limit, 10);
-    const result = await this.eastmoneyDataService.previewData(
-      filePath,
-      isNaN(limitNum) ? 10 : limitNum,
-    );
-    return result;
-  }
-
   @Post('eastmoney/cookie')
   @ApiOperation({ summary: '更新东财 Cookie' })
   @UsePipes(new ValidationPipe())
