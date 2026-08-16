@@ -399,15 +399,17 @@ export class TrendAnalysisService {
         (a, b) => (b.deviationRate || 0) - (a.deviationRate || 0),
       );
 
-      // 获取前一天的排名数据
-      const prevDate = new Date(tradeDate);
-      prevDate.setDate(prevDate.getDate() - 1);
-      const prevDayData = await this.trendRepository.find({
-        where: { tradeDate: prevDate },
-      });
-      const prevRankMap = new Map(
-        prevDayData.map((d) => [d.indexId, d.rank]),
-      );
+      // 获取前一个交易日的排名数据（使用getPreviousTradingDate确保获取到实际有数据的日期）
+      const prevDate = await this.getPreviousTradingDate(tradeDate);
+      let prevRankMap = new Map<string, number>();
+      if (prevDate) {
+        const prevDayData = await this.trendRepository.find({
+          where: { tradeDate: prevDate },
+        });
+        prevRankMap = new Map(
+          prevDayData.map((d) => [d.indexId, d.rank]),
+        );
+      }
 
       // 更新排名
       for (let i = 0; i < sortedData.length; i++) {
@@ -751,9 +753,19 @@ export class TrendAnalysisService {
     // 8. 按偏离率倒序排序（从大到小，10 排在 5 前面）
     result.sort((a, b) => (b.deviationRate || 0) - (a.deviationRate || 0));
 
-    // 9. 重新赋值排名
+    // 9. 重新赋值排名，并重新计算rankChange
+    // 构建前一个交易日排名的映射（用于计算排名变化）
+    const prevRankMap = new Map<string, number>();
+    for (const prevItem of prevData) {
+      prevRankMap.set(prevItem.indexId, prevItem.rank);
+    }
+
     result.forEach((item, index) => {
-      item.rank = index + 1;
+      const newRank = index + 1;
+      const prevRank = prevRankMap.get(item.indexId);
+      // 重新计算rankChange：正数表示排名上升，负数表示下降
+      item.rankChange = prevRank !== undefined ? prevRank - newRank : 0;
+      item.rank = newRank;
     });
 
     return result;
@@ -823,14 +835,26 @@ export class TrendAnalysisService {
       order: { rank: 'ASC' },
     });
 
+    // 构建前一个交易日排名的映射（用于重新计算排名变化）
+    const prevRankMap = new Map<string, number>();
+    for (const prevItem of prevData) {
+      prevRankMap.set(prevItem.indexId, prevItem.rank);
+    }
+
     // 历史日期的数据全部标记为 isTodayData: true（因为是历史数据，不需要补全）
     // 但保留 prevDeviationRate 用于判断偏离率转换
-    return data.map(item => ({
-      ...item,
-      isTodayData: true,
-      actualDataDate: item.tradeDate,
-      prevDeviationRate: prevDataMap.get(item.indexId)?.deviationRate || null,
-    }));
+    // 同时重新计算rankChange以确保准确性
+    return data.map(item => {
+      const prevRank = prevRankMap.get(item.indexId);
+      const rankChange = prevRank !== undefined ? prevRank - item.rank : 0;
+      return {
+        ...item,
+        isTodayData: true,
+        actualDataDate: item.tradeDate,
+        prevDeviationRate: prevDataMap.get(item.indexId)?.deviationRate || null,
+        rankChange,
+      };
+    });
   }
 
   /**
@@ -942,20 +966,21 @@ export class TrendAnalysisService {
       };
     }
 
-    // 4. 获取startDate前一天的趋势分析数据（用于计算rankChange和继承状态）
+    // 4. 获取startDate前一个交易日的趋势分析数据（用于计算rankChange和继承状态）
     const prevDayTrendData = new Map<string, TrendAnalysis>();
-    const prevDate = new Date(startDate);
-    prevDate.setDate(prevDate.getDate() - 1);
+    const prevDate = await this.getPreviousTradingDate(startDate);
 
-    for (const index of indicesToCalculate) {
-      const prevTrend = await this.trendRepository.findOne({
-        where: {
-          indexId: index.id,
-          tradeDate: prevDate,
-        },
-      });
-      if (prevTrend) {
-        prevDayTrendData.set(index.id, prevTrend);
+    if (prevDate) {
+      for (const index of indicesToCalculate) {
+        const prevTrend = await this.trendRepository.findOne({
+          where: {
+            indexId: index.id,
+            tradeDate: prevDate,
+          },
+        });
+        if (prevTrend) {
+          prevDayTrendData.set(index.id, prevTrend);
+        }
       }
     }
 

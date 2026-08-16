@@ -61,7 +61,7 @@ export function RankingTable({ data, loading }: RankingTableProps) {
     if (rate === null || rate === undefined || rate === '') return '';
     const r = typeof rate === 'string' ? parseFloat(rate) : rate;
     if (isNaN(r)) return '';
-    return r >= 0 ? 'bg-red-100' : 'bg-green-100';
+    return r >= 0 ? 'bg-red-300' : 'bg-green-300';
   };
 
   // 判断是否偏离率发生正负转换（需要标黄）

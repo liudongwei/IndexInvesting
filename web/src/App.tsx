@@ -137,30 +137,8 @@ function App() {
               {/* 数据说明 */}
               <div className="mt-6 text-xs text-gray-500 space-y-1">
                 <p>
-                  本数据来自于同花顺，仅为历史回测与市场风格观察，不构成任何投资建议。市场有风险，投资需谨慎。
+                  本数据来自腾讯和东方财富，仅为历史回测与市场风格观察，不构成任何投资建议。市场有风险，投资需谨慎。
                 </p>
-                <div className="flex gap-4 mt-2">
-                  <span className="flex items-center gap-1">
-                    <span className="w-3 h-3 bg-red-200 rounded"></span>
-                    偏离率 &gt; 2%
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-3 h-3 bg-red-100 rounded"></span>
-                    偏离率 1% ~ 2%
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-3 h-3 bg-yellow-200 rounded"></span>
-                    偏离率接近0
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-3 h-3 bg-green-100 rounded"></span>
-                    偏离率 -2% ~ -1%
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-3 h-3 bg-green-200 rounded"></span>
-                    偏离率 &lt; -2%
-                  </span>
-                </div>
               </div>
             </main>
           </>
