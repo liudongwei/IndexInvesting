@@ -154,6 +154,77 @@ export class TrendAnalysisController {
     };
   }
 
+  @Get('market-status-test')
+  @ApiOperation({
+    summary: '测试市场状态（可模拟时间）',
+    description: '用于测试不同时间点的市场状态，支持模拟指定时间和星期几',
+  })
+  async getMarketStatusTest(
+    @Query('hour') hour?: string,
+    @Query('minute') minute?: string,
+    @Query('dayOfWeek') dayOfWeek?: string, // 0=周日, 1=周一, ..., 6=周六
+  ) {
+    // 使用传入的参数或当前时间
+    const h = hour !== undefined ? parseInt(hour, 10) : new Date().getHours();
+    const m = minute !== undefined ? parseInt(minute, 10) : new Date().getMinutes();
+    const dow = dayOfWeek !== undefined ? parseInt(dayOfWeek, 10) : new Date().getDay();
+    
+    const currentTime = h * 60 + m;
+    const isWeekend = dow === 0 || dow === 6;
+
+    const marketStatus = {
+      asia: {
+        name: 'A股/台湾/日韩',
+        closeTime: '15:00',
+        isWeekend,
+        isTradingDay: !isWeekend,
+        isClosed: !isWeekend && currentTime >= 15 * 60 + 5,
+        nextUpdate: isWeekend ? '下周一15:05' : (currentTime < 15 * 60 + 5 ? '15:05' : '次日15:05'),
+      },
+      hk: {
+        name: '港股',
+        closeTime: '16:00',
+        isWeekend,
+        isTradingDay: !isWeekend,
+        isClosed: !isWeekend && currentTime >= 16 * 60 + 5,
+        nextUpdate: isWeekend ? '下周一16:05' : (currentTime < 16 * 60 + 5 ? '16:05' : '次日16:05'),
+      },
+      europe: {
+        name: '欧洲',
+        closeTime: '00:30',
+        isWeekend,
+        isTradingDay: !isWeekend,
+        isClosed: !isWeekend && currentTime >= 0 * 60 + 35 && currentTime < 5 * 60 + 5,
+        nextUpdate: isWeekend ? '下周一00:35' : (currentTime >= 0 * 60 + 35 && currentTime < 5 * 60 + 5 ? '次日00:35' : '00:35'),
+      },
+      us: {
+        name: '美股',
+        closeTime: '05:00',
+        isWeekend,
+        isTradingDay: !isWeekend,
+        isClosed: !isWeekend && currentTime >= 5 * 60 + 5 && currentTime < 6 * 60,
+        nextUpdate: isWeekend ? '下周一05:05' : (currentTime >= 5 * 60 + 5 && currentTime < 6 * 60 ? '次日05:05' : '05:05'),
+      },
+      metal: {
+        name: '贵金属',
+        closeTime: '06:00',
+        isWeekend: false,
+        isTradingDay: true,
+        isClosed: currentTime >= 6 * 60,
+        nextUpdate: currentTime >= 6 * 60 ? '次日06:00' : '06:00',
+      },
+    };
+
+    return {
+      success: true,
+      simulated: hour !== undefined || minute !== undefined || dayOfWeek !== undefined,
+      currentTime: `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`,
+      dayOfWeek: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][dow],
+      isWeekend,
+      markets: marketStatus,
+    };
+  }
+
   @Get('ranking/latest')
   @ApiOperation({ summary: '获取最新趋势排名（类似图中表格）' })
   async getLatestRanking() {
@@ -247,13 +318,23 @@ export class TrendAnalysisController {
         intervalChangePercent: item.intervalChangePercent,
         rankChange: item.rankChange,
         marketStatus, // 添加市场状态：closed-已收盘, updating-更新中, open-未收盘
+        isTodayData: item.isTodayData, // 是否为当天数据（true-当天，false-补全的上个交易日数据）
+        dataDate: item.actualDataDate, // 数据实际来源日期
+        tradeDate: item.tradeDate, // 统一为基准日期（最新日期）
+        prevDeviationRate: item.prevDeviationRate, // 昨天的偏离率，用于判断正负转换
       };
     });
+
+    // 统计数据情况
+    const todayDataCount = formatted.filter((item) => item.isTodayData).length;
+    const prevDataCount = formatted.filter((item) => !item.isTodayData).length;
 
     return {
       success: true,
       tradeDate: data[0]?.tradeDate,
       totalCount: formatted.length,
+      todayDataCount,
+      prevDataCount,
       data: formatted,
     };
   }
@@ -278,10 +359,10 @@ export class TrendAnalysisController {
         };
       }
 
-      // 格式化为表格形式
+      // 格式化为表格形式，包含数据时效性标识
       const formatted = data.map((item) => ({
         rank: item.rank,
-        code: item.index?.code,
+        code: item.index?.officialCode || item.index?.code,
         name: item.index?.name,
         changePercent: item.changePercent,
         closePrice: item.closePrice,
@@ -291,12 +372,22 @@ export class TrendAnalysisController {
         statusChangeDate: item.statusChangeDate,
         intervalChangePercent: item.intervalChangePercent,
         rankChange: item.rankChange,
+        isTodayData: item.isTodayData, // 是否为当天数据
+        dataDate: item.actualDataDate, // 数据实际来源日期
+        tradeDate: item.tradeDate, // 统一为基准日期
+        prevDeviationRate: item.prevDeviationRate, // 昨天的偏离率，用于判断正负转换
       }));
+
+      // 统计数据情况
+      const todayDataCount = formatted.filter((item) => item.isTodayData).length;
+      const prevDataCount = formatted.filter((item) => !item.isTodayData).length;
 
       return {
         success: true,
-        tradeDate: date,
+        tradeDate: data[0]?.tradeDate || date,
         totalCount: formatted.length,
+        todayDataCount,
+        prevDataCount,
         data: formatted,
       };
     } catch (error) {

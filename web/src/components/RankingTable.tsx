@@ -6,6 +6,25 @@ interface RankingTableProps {
   loading?: boolean;
 }
 
+// 动态脉冲圆环组件（牛市红色，慢速动画）
+function PulsingDot() {
+  return (
+    <span className="inline-flex items-center justify-center ml-2" title="使用上一交易日数据">
+      <span className="relative flex h-3 w-3">
+        {/* 外圈脉冲动画 - 牛市红色，2秒周期 */}
+        <span 
+          className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-60"
+          style={{
+            animation: 'pulse-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite',
+          }}
+        ></span>
+        {/* 内圈实心圆 - 牛市深红色 */}
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-red-600"></span>
+      </span>
+    </span>
+  );
+}
+
 export function RankingTable({ data, loading }: RankingTableProps) {
   // 格式化日期显示
   const formatDate = (dateStr: string) => {
@@ -37,25 +56,20 @@ export function RankingTable({ data, loading }: RankingTableProps) {
     return `${sign}${n.toFixed(digits)}%`;
   };
 
-  // 获取涨跌样式
-  const getTrendClass = (num: number | string | null | undefined) => {
-    if (num === null || num === undefined || num === '') return '';
-    const n = typeof num === 'string' ? parseFloat(num) : num;
-    if (isNaN(n)) return '';
-    return n >= 0 ? 'trend-up' : 'trend-down';
-  };
-
-  // 获取偏离率背景色
+  // 获取偏离率背景颜色：正数红色背景，负数绿色背景
   const getDeviationBgClass = (rate: number | string | null | undefined) => {
     if (rate === null || rate === undefined || rate === '') return '';
     const r = typeof rate === 'string' ? parseFloat(rate) : rate;
     if (isNaN(r)) return '';
-    if (r >= 2) return 'bg-red-200';
-    if (r >= 1) return 'bg-red-100';
-    if (r >= 0) return 'bg-orange-50';
-    if (r >= -1) return 'bg-green-50';
-    if (r >= -2) return 'bg-green-100';
-    return 'bg-green-200';
+    return r >= 0 ? 'bg-red-100' : 'bg-green-100';
+  };
+
+  // 判断是否偏离率发生正负转换（需要标黄）
+  // 昨天正今天负，或昨天负今天正
+  const isDeviationChanged = (current: number, prev: number | null | undefined) => {
+    if (prev === null || prev === undefined) return false;
+    // 昨天正今天负，或昨天负今天正
+    return (prev > 0 && current < 0) || (prev < 0 && current > 0);
   };
 
   // 获取排序变化显示
@@ -63,21 +77,6 @@ export function RankingTable({ data, loading }: RankingTableProps) {
     if (change === 0) return '0';
     if (change > 0) return `+${change}`;
     return `${change}`;
-  };
-
-  // 获取排序变化样式
-  const getRankChangeClass = (change: number) => {
-    if (change === 0) return 'text-gray-500';
-    if (change > 0) return 'trend-up'; // 排名上升是好事
-    return 'trend-down';
-  };
-
-  // 判断是否高亮显示（偏离率在0附近）
-  const shouldHighlight = (rate: number | string | null | undefined) => {
-    if (rate === null || rate === undefined || rate === '') return false;
-    const r = typeof rate === 'string' ? parseFloat(rate) : rate;
-    if (isNaN(r)) return false;
-    return r >= -0.2 && r <= 0.2;
   };
 
   if (loading) {
@@ -116,19 +115,20 @@ export function RankingTable({ data, loading }: RankingTableProps) {
         </thead>
         <tbody>
           {data.map((item) => (
-            <tr
-              key={item.code}
-              className={shouldHighlight(item.deviationRate) ? 'bg-highlight-yellow' : ''}
-            >
+            <tr key={item.code}>
               <td className="text-center font-medium">{item.rank}</td>
               <td className="text-center font-mono text-xs">{item.code}</td>
-              <td className="font-medium">{item.name}</td>
-              <td className={`text-right ${getTrendClass(item.changePercent)}`}>
+              <td className="font-medium">
+                {item.name}
+                {/* 使用上一交易日数据的指数显示动态脉冲圆环 */}
+                {item.isTodayData === false && <PulsingDot />}
+              </td>
+              <td className={`text-right ${item.changePercent >= 0 ? 'text-red-600' : 'text-green-600'}`}>
                 {formatPercent(item.changePercent)}
               </td>
               <td className="text-right font-mono">{formatNumber(item.closePrice, 2)}</td>
               <td className="text-right font-mono">{formatNumber(item.ma20, 2)}</td>
-              <td className={`text-right font-mono ${getDeviationBgClass(item.deviationRate)}`}>
+              <td className={`text-right font-mono text-black ${isDeviationChanged(item.deviationRate, item.prevDeviationRate) ? 'bg-yellow-100' : getDeviationBgClass(item.deviationRate)}`}>
                 {formatPercent(item.deviationRate)}
               </td>
               <td className="text-right font-mono">
@@ -137,10 +137,10 @@ export function RankingTable({ data, loading }: RankingTableProps) {
               <td className="text-center text-xs">
                 {formatDate(item.statusChangeDate)}
               </td>
-              <td className={`text-right ${getTrendClass(item.intervalChangePercent)}`}>
+              <td className="text-right">
                 {formatPercent(item.intervalChangePercent)}
               </td>
-              <td className={`text-center font-medium ${getRankChangeClass(item.rankChange)}`}>
+              <td className="text-center font-medium text-black">
                 {getRankChangeDisplay(item.rankChange)}
               </td>
             </tr>

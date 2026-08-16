@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, Between } from 'typeorm';
 import { TrendAnalysis } from './entities/trend-analysis.entity';
 import { MovingAverage } from '../moving-averages/entities/moving-average.entity';
 import { IndexHistory } from '../indices/entities/index-history.entity';
 import { Index } from '../indices/entities/index.entity';
+import { IndicesService } from '../indices/indices.service';
 
 export interface TrendAnalysisResult {
   indexId: string;
@@ -34,6 +35,8 @@ export class TrendAnalysisService {
     private maRepository: Repository<MovingAverage>,
     @InjectRepository(IndexHistory)
     private historyRepository: Repository<IndexHistory>,
+    @Inject(forwardRef(() => IndicesService))
+    private indicesService: IndicesService,
   ) {}
 
   /**
@@ -671,9 +674,15 @@ export class TrendAnalysisService {
 
   /**
    * 获取最新日期的所有指数趋势分析（用于排名展示）
+   * 如果某个指数在最新日期没有数据，则使用其上一个交易日的数据补全
+   * 确保排名列表始终包含所有活跃指数的全量数据
    */
-  async getLatestTrendRanking(): Promise<TrendAnalysis[]> {
-    // 获取最新日期（使用 find 配合 take:1 替代 findOne）
+  async getLatestTrendRanking(): Promise<(TrendAnalysis & { isTodayData: boolean; actualDataDate: Date; prevDeviationRate: number | null })[]> {
+    // 1. 获取所有活跃的指数
+    const indices = await this.indicesService.findAll();
+    const activeIndices = indices.filter((i) => i.isActive);
+
+    // 2. 获取趋势数据中最新的日期（基准日期）
     const latestRecords = await this.trendRepository.find({
       order: { tradeDate: 'DESC' },
       take: 1,
@@ -683,23 +692,97 @@ export class TrendAnalysisService {
       return [];
     }
 
-    const latestRecord = latestRecords[0];
+    const latestDate = latestRecords[0].tradeDate;
 
-    // 获取该日期的所有数据
-    const data = await this.trendRepository.find({
-      where: { tradeDate: latestRecord.tradeDate },
+    // 3. 获取基准日期的所有趋势数据
+    const latestData = await this.trendRepository.find({
+      where: { tradeDate: latestDate },
       relations: { index: true },
-      order: { rank: 'ASC' },
     });
 
-    return data;
+    // 4. 获取上一个交易日的日期
+    const prevTradingDate = await this.getPreviousTradingDate(latestDate);
+
+    // 5. 获取上一个交易日的趋势数据（用于补全和计算偏离率变化）
+    let prevData: TrendAnalysis[] = [];
+    if (prevTradingDate) {
+      prevData = await this.trendRepository.find({
+        where: { tradeDate: prevTradingDate },
+        relations: { index: true },
+      });
+    }
+
+    // 6. 构建指数ID到数据的映射
+    const latestDataMap = new Map(latestData.map((d) => [d.indexId, d]));
+    const prevDataMap = new Map(prevData.map((d) => [d.indexId, d]));
+
+    // 7. 为每个指数选择数据：优先用基准日期的，没有则用上一个交易日的
+    const result: (TrendAnalysis & { isTodayData: boolean; actualDataDate: Date; prevDeviationRate: number | null })[] = [];
+
+    for (const index of activeIndices) {
+      const latestRecord = latestDataMap.get(index.id);
+      const prevRecord = prevDataMap.get(index.id);
+
+      // 获取昨天的偏离率（用于前端判断正负转换）
+      const prevDeviationRate = prevRecord ? prevRecord.deviationRate : null;
+
+      if (latestRecord) {
+        // 基准日期有数据，使用基准日期的
+        result.push({ 
+          ...latestRecord, 
+          isTodayData: true, 
+          actualDataDate: latestRecord.tradeDate,
+          prevDeviationRate 
+        });
+      } else if (prevRecord) {
+        // 基准日期没有，使用上一个交易日的，并标记
+        // 将 tradeDate 改为基准日期，但保留 actualDataDate 记录实际数据日期
+        result.push({ 
+          ...prevRecord, 
+          tradeDate: latestDate, // 统一显示为基准日期
+          isTodayData: false, 
+          actualDataDate: prevRecord.tradeDate, // 记录实际数据日期
+          prevDeviationRate
+        });
+      }
+      // 如果都没有，说明是新指数或数据缺失，跳过
+    }
+
+    // 8. 按偏离率倒序排序（从大到小，10 排在 5 前面）
+    result.sort((a, b) => (b.deviationRate || 0) - (a.deviationRate || 0));
+
+    // 9. 重新赋值排名
+    result.forEach((item, index) => {
+      item.rank = index + 1;
+    });
+
+    return result;
+  }
+
+  /**
+   * 获取指定日期的上一个交易日
+   * @param date 指定日期
+   * @returns 上一个交易日的日期，如果没有则返回null
+   */
+  private async getPreviousTradingDate(date: Date): Promise<Date | null> {
+    // 从趋势数据中查找小于指定日期的最大日期
+    const prevRecord = await this.trendRepository.find({
+      where: {
+        tradeDate: LessThan(date),
+      },
+      order: { tradeDate: 'DESC' },
+      take: 1,
+    });
+
+    return prevRecord.length > 0 ? prevRecord[0].tradeDate : null;
   }
 
   /**
    * 获取指定日期的所有指数趋势分析排名
    * @param date 指定日期（格式：YYYY-MM-DD）
+   * @returns 包含数据补全信息的趋势分析数组
    */
-  async getTrendRankingByDate(date: string): Promise<TrendAnalysis[]> {
+  async getTrendRankingByDate(date: string): Promise<(TrendAnalysis & { isTodayData: boolean; actualDataDate: Date; prevDeviationRate: number | null })[]> {
     const tradeDate = new Date(date);
 
     // 验证日期格式
@@ -707,13 +790,47 @@ export class TrendAnalysisService {
       throw new Error('无效的日期格式，请使用 YYYY-MM-DD 格式');
     }
 
+    // 获取数据库中最新的日期
+    const latestRecords = await this.trendRepository.find({
+      order: { tradeDate: 'DESC' },
+      take: 1,
+    });
+
+    if (latestRecords.length === 0) {
+      return [];
+    }
+
+    const latestDate = latestRecords[0].tradeDate;
+    const latestDateStr = this.formatDate(latestDate);
+
+    // 如果查询的是最新日期，使用 getLatestTrendRanking（包含数据补全逻辑）
+    if (date === latestDateStr) {
+      return await this.getLatestTrendRanking();
+    }
+
+    // 查询历史日期，需要获取前一天的偏离率来判断转换
+    const prevDate = await this.getPreviousTradingDate(tradeDate);
+    const prevData = prevDate ? await this.trendRepository.find({
+      where: { tradeDate: prevDate },
+      relations: { index: true },
+    }) : [];
+    const prevDataMap = new Map(prevData.map((d) => [d.indexId, d]));
+
+    // 查询历史日期的数据
     const data = await this.trendRepository.find({
       where: { tradeDate },
       relations: { index: true },
       order: { rank: 'ASC' },
     });
 
-    return data;
+    // 历史日期的数据全部标记为 isTodayData: true（因为是历史数据，不需要补全）
+    // 但保留 prevDeviationRate 用于判断偏离率转换
+    return data.map(item => ({
+      ...item,
+      isTodayData: true,
+      actualDataDate: item.tradeDate,
+      prevDeviationRate: prevDataMap.get(item.indexId)?.deviationRate || null,
+    }));
   }
 
   /**
