@@ -1,8 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { IndicesService } from './indices.service';
 import { IndexDataService, KlineData } from './index-data.service';
 import { EastmoneyDataService } from './eastmoney-data.service';
+import { MovingAveragesService } from '../moving-averages/moving-averages.service';
+import { TrendAnalysisService } from '../trend-analysis/trend-analysis.service';
 import { Index } from './entities/index.entity';
 import { IndexHistory } from './entities/index-history.entity';
 
@@ -14,6 +16,10 @@ export class IndexSyncService {
     private readonly indicesService: IndicesService,
     private readonly indexDataService: IndexDataService,
     private readonly eastmoneyDataService: EastmoneyDataService,
+    @Inject(forwardRef(() => MovingAveragesService))
+    private readonly maService: MovingAveragesService,
+    @Inject(forwardRef(() => TrendAnalysisService))
+    private readonly trendService: TrendAnalysisService,
   ) {}
 
   /**
@@ -955,6 +961,37 @@ export class IndexSyncService {
     }
 
     this.logger.log(`${marketName}同步完成，共新增 ${totalCount} 条数据`);
+
+    // 同步完成后，计算该市场的MA和趋势数据
+    if (totalCount > 0 && targetIndices.length > 0) {
+      try {
+        // 1. 计算MA
+        this.logger.log(`[${marketName}] 开始计算移动平均线...`);
+        const maResult = await this.maService.calculateMAForIndices(
+          targetIndices,
+          marketName,
+        );
+        this.logger.log(
+          `[${marketName}] MA计算完成: ${maResult.total} 条数据`,
+        );
+
+        // 2. 计算趋势分析
+        this.logger.log(`[${marketName}] 开始计算趋势分析...`);
+        const trendResult =
+          await this.trendService.performTrendAnalysisForIndices(
+            targetIndices,
+            marketName,
+          );
+        this.logger.log(
+          `[${marketName}] 趋势分析完成: ${trendResult.total} 条数据`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `[${marketName}] MA或趋势计算失败: ${error.message}`,
+        );
+      }
+    }
+
     return { total: totalCount, results };
   }
 

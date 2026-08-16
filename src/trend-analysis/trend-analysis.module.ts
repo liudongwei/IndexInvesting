@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TrendAnalysisService } from './trend-analysis.service';
@@ -13,7 +13,7 @@ import { IndicesModule } from '../indices/indices.module';
   imports: [
     TypeOrmModule.forFeature([TrendAnalysis, MovingAverage, IndexHistory]),
     ScheduleModule.forRoot(),
-    IndicesModule,
+    forwardRef(() => IndicesModule),
   ],
   controllers: [TrendAnalysisController],
   providers: [TrendAnalysisService, TrendCronService],

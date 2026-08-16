@@ -373,6 +373,82 @@ export class MovingAveragesService {
   }
 
   /**
+   * 为指定指数列表计算MA数据（市场同步后调用）
+   * 只计算有新增数据的指数，使用增量模式
+   * @param indices 指数列表
+   * @param marketName 市场名称（用于日志）
+   */
+  async calculateMAForIndices(
+    indices: Index[],
+    marketName: string = '指定市场',
+  ): Promise<{
+    total: number;
+    calculatedCount: number;
+    skippedCount: number;
+    results: { indexName: string; count: number }[];
+  }> {
+    this.logger.log(
+      `[${marketName}] 开始计算移动平均线，共 ${indices.length} 个指数...`,
+    );
+
+    // 筛选出需要计算的指数
+    const indicesToCalculate =
+      await this.getIndicesNeedingMACalculation(indices);
+    const skippedCount = indices.length - indicesToCalculate.length;
+
+    if (skippedCount > 0) {
+      this.logger.log(`[${marketName}] ${skippedCount} 个指数已是最新，跳过`);
+    }
+
+    if (indicesToCalculate.length === 0) {
+      this.logger.log(`[${marketName}] 所有指数MA数据都已是最新`);
+      return {
+        total: 0,
+        calculatedCount: 0,
+        skippedCount,
+        results: [],
+      };
+    }
+
+    this.logger.log(
+      `[${marketName}] 实际计算 ${indicesToCalculate.length} 个指数`,
+    );
+
+    const results: { indexName: string; count: number }[] = [];
+    let totalCount = 0;
+
+    for (const index of indicesToCalculate) {
+      try {
+        const result = await this.calculateAndSaveMAIncrementally(index);
+        results.push({
+          indexName: result.indexName,
+          count: result.calculatedCount,
+        });
+        totalCount += result.calculatedCount;
+      } catch (error) {
+        this.logger.error(
+          `[${marketName}] 计算 ${index.name} MA失败: ${error.message}`,
+        );
+        results.push({
+          indexName: index.name,
+          count: 0,
+        });
+      }
+    }
+
+    this.logger.log(
+      `[${marketName}] MA计算完成，共 ${totalCount} 条数据，跳过 ${skippedCount} 个`,
+    );
+
+    return {
+      total: totalCount,
+      calculatedCount: indicesToCalculate.length,
+      skippedCount,
+      results,
+    };
+  }
+
+  /**
    * 批量计算所有指数的MA数据（只计算需要更新的）
    * 默认使用增量计算模式，只计算新增的数据
    */

@@ -1269,6 +1269,150 @@ export class TrendAnalysisService {
   }
 
   /**
+   * 为指定指数列表执行趋势分析（市场同步后调用）
+   * 只计算有新增MA数据的指数，实时更新趋势
+   * @param indices 指数列表
+   * @param marketName 市场名称（用于日志）
+   */
+  async performTrendAnalysisForIndices(
+    indices: Index[],
+    marketName: string = '指定市场',
+  ): Promise<{
+    total: number;
+    calculatedCount: number;
+    skippedCount: number;
+    results: { indexName: string; count: number }[];
+  }> {
+    // 筛选出需要计算趋势的指数（calcTrend=1 或未设置时默认计算）
+    const indicesToCalculate = indices.filter((index) => {
+      const calcTrend = index.metadata?.calcTrend;
+      return calcTrend === 1 || calcTrend === undefined || calcTrend === null;
+    });
+
+    const skippedCount = indices.length - indicesToCalculate.length;
+
+    this.logger.log(
+      `[${marketName}] 开始执行趋势分析，共 ${indices.length} 个指数，实际计算 ${indicesToCalculate.length} 个，跳过 ${skippedCount} 个`,
+    );
+
+    if (indicesToCalculate.length === 0) {
+      this.logger.log(`[${marketName}] 没有需要计算趋势的指数`);
+      return {
+        total: 0,
+        calculatedCount: 0,
+        skippedCount,
+        results: [],
+      };
+    }
+
+    const allNewResults = new Map<string, TrendAnalysisResult[]>();
+    const indexResults: { indexName: string; count: number }[] = [];
+    let totalNewCount = 0;
+
+    // 第一步：收集所有指数的新趋势数据
+    for (const index of indicesToCalculate) {
+      try {
+        const newResults = await this.calculateIncrementalTrendForIndex(index);
+
+        if (newResults.length === 0) {
+          this.logger.debug(
+            `[${marketName}] ${index.name} 没有新的趋势数据，跳过`,
+          );
+          continue;
+        }
+
+        allNewResults.set(index.id, newResults);
+        totalNewCount += newResults.length;
+        this.logger.log(
+          `[${marketName}] ${index.name} 新增 ${newResults.length} 条趋势数据`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `[${marketName}] 计算 ${index.name} 趋势失败: ${error.message}`,
+        );
+      }
+    }
+
+    if (allNewResults.size === 0) {
+      this.logger.log(`[${marketName}] 所有指数趋势数据都已是最新`);
+      return {
+        total: 0,
+        calculatedCount: 0,
+        skippedCount,
+        results: [],
+      };
+    }
+
+    // 第二步：统一计算所有日期的排名
+    const allDates = new Set<string>();
+    for (const results of allNewResults.values()) {
+      results.forEach((r) => allDates.add(this.formatDate(r.tradeDate)));
+    }
+
+    // 第三步：对每个日期计算排名和排序变化
+    const finalResults: TrendAnalysisResult[] = [];
+
+    for (const dateStr of Array.from(allDates).sort()) {
+      const date = new Date(dateStr);
+
+      // 计算该日期的排名（包含数据库中已有数据和新计算的数据）
+      const rankings = await this.calculateRankingsForDateIncremental(
+        date,
+        allNewResults,
+      );
+
+      // 更新每个指数在该日期的排名和排序变化
+      for (const [indexId, results] of allNewResults.entries()) {
+        const result = results.find(
+          (r) => this.formatDate(r.tradeDate) === dateStr,
+        );
+        if (result) {
+          const rank = rankings.get(indexId) || 0;
+          const rankChange = await this.calculateRankChange(
+            indexId,
+            rank,
+            date,
+          );
+
+          finalResults.push({
+            ...result,
+            rank,
+            rankChange,
+            totalRankCount: rankings.size,
+          });
+        }
+      }
+    }
+
+    // 第四步：保存所有结果
+    const savedCount = await this.saveTrendAnalysis(finalResults);
+
+    // 统计结果
+    for (const result of finalResults) {
+      const index = indices.find((i) => i.id === result.indexId);
+      if (index) {
+        const existing = indexResults.find((r) => r.indexName === index.name);
+        if (existing) {
+          existing.count++;
+        } else {
+          indexResults.push({ indexName: index.name, count: 1 });
+        }
+      }
+    }
+
+    this.logger.log(
+      `[${marketName}] 趋势分析完成，共 ${savedCount} 条数据，涉及 ${allNewResults.size} 个指数`,
+    );
+
+    return {
+      total: savedCount,
+      calculatedCount: allNewResults.size,
+      skippedCount: indicesToCalculate.length - allNewResults.size + skippedCount,
+      results: indexResults,
+    };
+  }
+
+  /**
    * 为单个指数计算增量趋势数据
    * @returns 新增的趋势数据（未计算排名）
    */
