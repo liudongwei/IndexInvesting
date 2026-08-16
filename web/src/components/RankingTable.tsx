@@ -4,6 +4,7 @@ interface RankingTableProps {
   data: TrendRankingItem[];
   tradeDate: string;
   loading?: boolean;
+  onIndexClick?: (item: TrendRankingItem) => void;
 }
 
 // 动态脉冲圆环组件（牛市红色，慢速动画）
@@ -25,7 +26,7 @@ function PulsingDot() {
   );
 }
 
-export function RankingTable({ data, loading }: RankingTableProps) {
+export function RankingTable({ data, loading, onIndexClick }: RankingTableProps) {
   // 格式化日期显示
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '-';
@@ -117,8 +118,16 @@ export function RankingTable({ data, loading }: RankingTableProps) {
           {data.map((item) => (
             <tr key={item.code}>
               <td className="text-center font-medium">{item.rank}</td>
-              <td className="text-center font-mono text-xs">{item.code}</td>
-              <td className="font-medium">
+              <td 
+                className="text-center font-mono text-xs cursor-pointer hover:text-blue-600 hover:underline"
+                onClick={() => onIndexClick?.(item)}
+              >
+                {item.code}
+              </td>
+              <td 
+                className="font-medium cursor-pointer hover:text-blue-600 hover:underline"
+                onClick={() => onIndexClick?.(item)}
+              >
                 {item.name}
                 {/* 使用上一交易日数据的指数显示动态脉冲圆环 */}
                 {item.isTodayData === false && <PulsingDot />}

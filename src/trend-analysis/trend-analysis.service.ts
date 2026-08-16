@@ -81,9 +81,10 @@ export class TrendAnalysisService {
         statusChangeDate = tradeDate;
         statusChangePrice = closePrice;
       } else if (previousStatus !== trendStatus) {
-        // 状态发生转变，记录转变日期和价格（使用转变当天的价格作为基准）
+        // 状态发生转变，记录转变日期和价格
+        // 使用上一交易日的收盘价作为基准，这样转变日当天的涨幅会被计入区间涨幅
         statusChangeDate = tradeDate;
-        statusChangePrice = closePrice;
+        statusChangePrice = i > 0 ? Number(sortedMAData[i - 1].closePrice) : closePrice;
       }
 
       // 计算涨幅（相对上一交易日）
@@ -1177,8 +1178,9 @@ export class TrendAnalysisService {
         statusChangePrice = closePrice;
       } else if (previousStatus !== trendStatus) {
         // 状态发生转变，记录转变日期和价格
+        // 使用上一交易日的收盘价作为基准，这样转变日当天的涨幅会被计入区间涨幅
         statusChangeDate = tradeDate;
-        statusChangePrice = closePrice;
+        statusChangePrice = i > 0 ? Number(sortedMAData[i - 1].closePrice) : closePrice;
       }
 
       // 计算涨幅（相对上一交易日）- 使用MA数据中的前一条
@@ -1661,8 +1663,9 @@ export class TrendAnalysisService {
         statusChangePrice = closePrice;
       } else if (previousStatus !== trendStatus) {
         // 状态发生转变，记录转变日期和价格
+        // 使用上一交易日的收盘价作为基准，这样转变日当天的涨幅会被计入区间涨幅
         statusChangeDate = tradeDate;
-        statusChangePrice = closePrice;
+        statusChangePrice = i > 0 ? Number(sortedMAData[i - 1].closePrice) : closePrice;
       }
 
       // 计算涨幅（相对上一交易日）
