@@ -393,13 +393,17 @@ export class IndexSyncService {
       // 根据日期范围计算合理的limit（考虑交易日约250天/年，加20%缓冲）
       const start = new Date(startDate);
       const end = new Date(endDate);
-      const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      const daysDiff = Math.ceil(
+        (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
+      );
       const tradingDays = Math.max(Math.ceil(daysDiff * 0.7), 10); // 按70%交易日估算，最少10条
       const limit = Math.ceil(tradingDays * 1.2); // 加20%缓冲
 
       if (dataSource === 'easymoney') {
         // 东财API - 获取足够多的数据，然后过滤日期范围
-        this.logger.log(`[${index.name}] 使用东财API重新同步，计算limit: ${limit}`);
+        this.logger.log(
+          `[${index.name}] 使用东财API重新同步，计算limit: ${limit}`,
+        );
         const result = await this.eastmoneyDataService.getKlineFromApi(
           index.code,
           limit,
@@ -423,13 +427,22 @@ export class IndexSyncService {
         source = 'easymoney';
       } else if (dataSource === 'sina') {
         // 新浪API - 获取数据后过滤日期范围
-        this.logger.log(`[${index.name}] 使用新浪API重新同步，计算limit: ${limit}`);
-        const sinaData = await this.indexDataService.getSinaKline(index.code, limit);
-        data = sinaData.filter((item) => item.date >= startDate && item.date <= endDate);
+        this.logger.log(
+          `[${index.name}] 使用新浪API重新同步，计算limit: ${limit}`,
+        );
+        const sinaData = await this.indexDataService.getSinaKline(
+          index.code,
+          limit,
+        );
+        data = sinaData.filter(
+          (item) => item.date >= startDate && item.date <= endDate,
+        );
         source = 'sina';
       } else {
         // 腾讯API（默认）
-        this.logger.log(`[${index.name}] 使用腾讯API重新同步，计算limit: ${limit}`);
+        this.logger.log(
+          `[${index.name}] 使用腾讯API重新同步，计算limit: ${limit}`,
+        );
         data = await this.indexDataService.getTencentKlineByDateRange(
           index.code,
           startDate,
@@ -448,7 +461,9 @@ export class IndexSyncService {
         };
       }
 
-      this.logger.log(`[${index.name}] 从${source} API获取到 ${data.length} 条数据`);
+      this.logger.log(
+        `[${index.name}] 从${source} API获取到 ${data.length} 条数据`,
+      );
 
       // 2. 转换数据
       const historyData = this.convertToHistoryData(data, source);
@@ -939,9 +954,7 @@ export class IndexSyncService {
           targetIndices,
           marketName,
         );
-        this.logger.log(
-          `[${marketName}] MA计算完成: ${maResult.total} 条数据`,
-        );
+        this.logger.log(`[${marketName}] MA计算完成: ${maResult.total} 条数据`);
 
         // 2. 计算趋势分析
         this.logger.log(`[${marketName}] 开始计算趋势分析...`);
@@ -954,9 +967,7 @@ export class IndexSyncService {
           `[${marketName}] 趋势分析完成: ${trendResult.total} 条数据`,
         );
       } catch (error) {
-        this.logger.error(
-          `[${marketName}] MA或趋势计算失败: ${error.message}`,
-        );
+        this.logger.error(`[${marketName}] MA或趋势计算失败: ${error.message}`);
       }
     }
 
@@ -969,7 +980,6 @@ export class IndexSyncService {
    * A股和港股由各自的独立Cron任务处理
    */
   // @Cron('35 14 * * *')
-  @Cron('50 14 * * *')
   async handleTWandJapanKoreaSync() {
     this.logger.log('执行早盘市场定时同步任务（台湾、日韩）...');
     const results: { market: string; total: number }[] = [];
@@ -1006,8 +1016,7 @@ export class IndexSyncService {
    * 定时任务：A股收盘后同步（15:05）
    * A股交易时间 9:30-15:00，延迟5分钟后同步
    */
-  // @Cron('5 15 * * *')
-  @Cron('29 15 * * *')
+  @Cron('5 15 * * *')
   async handleAStockSync() {
     this.logger.log('A股交易时间结束（延迟5分钟），执行数据同步...');
     try {
@@ -1025,8 +1034,7 @@ export class IndexSyncService {
    * 定时任务：港股收盘后同步（16:05）
    * 港股交易时间 9:30-16:00，延迟5分钟后同步
    */
-  // @Cron('5 16 * * *')
-  @Cron('50 14 * * *')
+  @Cron('5 16 * * *')
   async handleHKStockSync() {
     this.logger.log('港股交易时间结束（延迟5分钟），执行数据同步...');
     try {
@@ -1045,7 +1053,7 @@ export class IndexSyncService {
    * 台湾交易时间 9:00-13:30，延迟5分钟后同步
    * 收盘时间早于A股，按A股时间统一处理
    */
-  // @Cron('5 15 * * *')
+  @Cron('35 13 * * *')
   async handleTaiwanStockSync() {
     this.logger.log('台湾市场交易时间结束（延迟5分钟），执行数据同步...');
     try {
@@ -1064,7 +1072,7 @@ export class IndexSyncService {
    * 日本交易时间 8:00-14:30，韩国交易时间 8:00-14:30（北京时间）
    * 收盘时间早于A股，按A股时间统一处理
    */
-  // @Cron('5 15 * * *')
+  @Cron('35 14 * * *')
   async handleJapanKoreaStockSync() {
     this.logger.log('日韩市场交易时间结束（延迟5分钟），执行数据同步...');
     try {
@@ -1102,8 +1110,7 @@ export class IndexSyncService {
    * 美股夏令时 21:30-04:00，冬令时 22:30-05:00（北京时间）
    * 统一在05:05执行，覆盖冬夏令时
    */
-  // @Cron('5 5 * * *')
-  @Cron('59 14 * * *')
+  @Cron('5 5 * * *')
   async handleUSStockSync() {
     this.logger.log('美股交易时间结束（延迟5分钟），执行数据同步...');
     try {
@@ -1121,8 +1128,7 @@ export class IndexSyncService {
    * 定时任务：贵金属同步（06:00）
    * 贵金属24小时交易，在美股收盘后1小时同步，确保数据完整
    */
-  // @Cron('5 6 * * *')
-  @Cron('31 15 * * *')
+  @Cron('5 6 * * *')
   async handlePreciousMetalSync() {
     this.logger.log('执行贵金属数据同步（24小时交易，美股收盘后1小时）...');
     try {
