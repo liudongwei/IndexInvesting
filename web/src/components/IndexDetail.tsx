@@ -10,6 +10,8 @@ interface IndexInfo {
   officialCode?: string;
 }
 
+const PAGE_SIZE = 20;
+
 export function IndexDetail() {
   const { indexId } = useParams<{ indexId: string }>();
   const navigate = useNavigate();
@@ -17,6 +19,7 @@ export function IndexDetail() {
   const [indexInfo, setIndexInfo] = useState<IndexInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     if (!indexId) {
@@ -33,12 +36,12 @@ export function IndexDetail() {
     try {
       // 首先尝试通过 code 查询指数
       let index = await getIndexByCode(code);
-      
+
       // 如果没找到，尝试通过 officialCode 查询
       if (!index) {
         index = await getIndexByOfficialCode(code);
       }
-      
+
       if (!index) {
         setError(`未找到代码为 ${code} 的指数`);
         setLoading(false);
@@ -47,14 +50,16 @@ export function IndexDetail() {
 
       setIndexInfo(index);
 
-      // 获取趋势历史数据
-      const response = await getIndexTrendHistory(index.id, 20);
+      // 获取趋势历史数据（获取全量数据，最多10000条）
+      const response = await getIndexTrendHistory(index.id, 10000);
       if (response.success && response.data.length > 0) {
-        // 按交易日期正序排列（从早到晚）
+        // 按交易日期倒序排列（从晚到早）
         const sortedData = [...response.data].sort(
-          (a, b) => new Date(a.tradeDate).getTime() - new Date(b.tradeDate).getTime()
+          (a, b) =>
+            new Date(b.tradeDate).getTime() - new Date(a.tradeDate).getTime(),
         );
         setData(sortedData);
+        setCurrentPage(1);
       } else {
         setError('暂无趋势数据');
       }
@@ -104,7 +109,10 @@ export function IndexDetail() {
   };
 
   // 判断是否偏离率发生正负转换
-  const isDeviationChanged = (current: number, prev: number | null | undefined) => {
+  const isDeviationChanged = (
+    current: number,
+    prev: number | null | undefined,
+  ) => {
     if (prev === null || prev === undefined) return false;
     return (prev > 0 && current < 0) || (prev < 0 && current > 0);
   };
@@ -114,6 +122,48 @@ export function IndexDetail() {
     if (change === 0) return '0';
     if (change > 0) return `+${change}`;
     return `${change}`;
+  };
+
+  // 分页计算
+  const totalPages = Math.ceil(data.length / PAGE_SIZE);
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const endIndex = startIndex + PAGE_SIZE;
+  const currentData = data.slice(startIndex, endIndex);
+
+  // 页码变化处理
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+  // 生成页码数组
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const maxVisiblePages = 5;
+
+    if (totalPages <= maxVisiblePages) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      if (currentPage <= 3) {
+        for (let i = 1; i <= 4; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        pages.push(1);
+        pages.push('...');
+        for (let i = totalPages - 3; i <= totalPages; i++) pages.push(i);
+      } else {
+        pages.push(1);
+        pages.push('...');
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      }
+    }
+    return pages;
   };
 
   if (loading) {
@@ -153,7 +203,7 @@ export function IndexDetail() {
                 {indexInfo?.name} ({indexInfo?.officialCode || indexInfo?.code})
               </h1>
               <p className="text-sm text-gray-500 mt-1">
-                近20天趋势数据
+                共 {data.length} 条趋势历史数据（每页20条，按日期倒序）
               </p>
             </div>
             <button
@@ -186,27 +236,39 @@ export function IndexDetail() {
                 </tr>
               </thead>
               <tbody>
-                {data.map((item, index) => {
-                  // 获取前一条数据的偏离率用于判断转换
-                  const prevItem = index > 0 ? data[index - 1] : null;
-                  const prevDeviationRate = prevItem ? prevItem.deviationRate : null;
-                  
+                {currentData.map((item, index) => {
+                  // 获取前一条数据的偏离率用于判断转换（在分页内判断）
+                  const prevItem = index > 0 ? currentData[index - 1] : null;
+                  const prevDeviationRate = prevItem
+                    ? prevItem.deviationRate
+                    : null;
+
                   return (
                     <tr key={item.tradeDate}>
                       <td className="text-center font-mono text-xs">
                         {formatDate(item.tradeDate)}
                       </td>
                       <td className="text-center font-medium">{item.rank}</td>
-                      <td className={`text-right ${item.changePercent >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      <td
+                        className={`text-right ${item.changePercent >= 0 ? 'text-red-600' : 'text-green-600'}`}
+                      >
                         {formatPercent(item.changePercent)}
                       </td>
-                      <td className="text-right font-mono">{formatNumber(item.closePrice, 2)}</td>
-                      <td className="text-right font-mono">{formatNumber(item.ma20, 2)}</td>
-                      <td className={`text-right font-mono text-black ${isDeviationChanged(item.deviationRate, prevDeviationRate) ? 'bg-yellow-100' : getDeviationBgClass(item.deviationRate)}`}>
+                      <td className="text-right font-mono">
+                        {formatNumber(item.closePrice, 2)}
+                      </td>
+                      <td className="text-right font-mono">
+                        {formatNumber(item.ma20, 2)}
+                      </td>
+                      <td
+                        className={`text-right font-mono text-black ${isDeviationChanged(item.deviationRate, prevDeviationRate) ? 'bg-yellow-100' : getDeviationBgClass(item.deviationRate)}`}
+                      >
                         {formatPercent(item.deviationRate)}
                       </td>
                       <td className="text-right font-mono">
-                        {item.volumeRatio ? formatNumber(item.volumeRatio, 2) : '-'}
+                        {item.volumeRatio
+                          ? formatNumber(item.volumeRatio, 2)
+                          : '-'}
                       </td>
                       <td className="text-center text-xs">
                         {formatDate(item.statusChangeDate)}
@@ -224,6 +286,62 @@ export function IndexDetail() {
             </table>
           </div>
         </div>
+
+        {/* 分页组件 */}
+        {totalPages > 1 && (
+          <div className="mt-4 flex items-center justify-between bg-white px-4 py-3 rounded-lg shadow">
+            <div className="text-sm text-gray-500">
+              共 {data.length} 条数据，第 {currentPage} / {totalPages} 页
+            </div>
+            <div className="flex items-center gap-1">
+              {/* 上一页 */}
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className={`px-3 py-1 rounded text-sm ${
+                  currentPage === 1
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                上一页
+              </button>
+
+              {/* 页码 */}
+              {getPageNumbers().map((page, index) => (
+                <button
+                  key={index}
+                  onClick={() =>
+                    typeof page === 'number' && handlePageChange(page)
+                  }
+                  disabled={page === '...'}
+                  className={`px-3 py-1 rounded text-sm min-w-[32px] ${
+                    page === currentPage
+                      ? 'bg-blue-600 text-white'
+                      : page === '...'
+                        ? 'bg-transparent text-gray-400 cursor-default'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+
+              {/* 下一页 */}
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className={`px-3 py-1 rounded text-sm ${
+                  currentPage === totalPages
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                下一页
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 数据说明 */}
         <div className="mt-6 text-xs text-gray-500 space-y-1">

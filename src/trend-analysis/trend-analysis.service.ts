@@ -75,16 +75,23 @@ export class TrendAnalysisService {
       const trendStatus: 'above' | 'below' =
         closePrice >= ma20 ? 'above' : 'below';
 
+      // 保存旧的状态转变价格和日期用于计算区间涨幅
+      const oldStatusChangePrice = statusChangePrice;
+      const oldStatusChangeDate = statusChangeDate;
+
       // 检测状态转变或首次计算
+      let isStatusChanged = false;
       if (previousStatus === null) {
         // 首次计算，初始化状态转变基准
         statusChangeDate = tradeDate;
         statusChangePrice = closePrice;
+        isStatusChanged = true;
       } else if (previousStatus !== trendStatus) {
         // 状态发生转变，记录转变日期和价格
-        // 使用上一交易日的收盘价作为基准，这样转变日当天的涨幅会被计入区间涨幅
+        // 使用当天的收盘价作为新的基准价格
         statusChangeDate = tradeDate;
-        statusChangePrice = i > 0 ? Number(sortedMAData[i - 1].closePrice) : closePrice;
+        statusChangePrice = closePrice;
+        isStatusChanged = true;
       }
 
       // 计算涨幅（相对上一交易日）
@@ -98,10 +105,15 @@ export class TrendAnalysisService {
       const deviationRate = ((closePrice - ma20) / ma20) * 100;
 
       // 计算区间涨幅（从状态转变日到当前）
+      // 如果状态在今天发生转变，使用上一次的基准价格计算区间涨幅
+      // 否则使用当前的基准价格（即状态转变日的收盘价）
       let intervalChangePercent: number | null = null;
       if (statusChangeDate !== null && statusChangePrice !== null) {
-        intervalChangePercent =
-          ((closePrice - statusChangePrice) / statusChangePrice) * 100;
+        const basePrice =
+          isStatusChanged && oldStatusChangePrice !== null
+            ? oldStatusChangePrice
+            : statusChangePrice;
+        intervalChangePercent = ((closePrice - basePrice) / basePrice) * 100;
       }
 
       // 获取量比（如果有历史数据）
@@ -1132,11 +1144,42 @@ export class TrendAnalysisService {
       // 从历史记录继承状态
       previousStatus = prevTrendRecord.trendStatus;
       statusChangeDate = prevTrendRecord.statusChangeDate;
-      // 反推状态转变日的价格：statusChangePrice = closePrice / (1 + intervalChangePercent/100)
-      // 当 intervalChangePercent 为 0 时，statusChangePrice = closePrice
-      statusChangePrice =
-        prevTrendRecord.closePrice /
-        (1 + (prevTrendRecord.intervalChangePercent || 0) / 100);
+      // 从MA数据中查找状态转变日的收盘价，而不是通过区间涨幅反推
+      // 这样可以避免精度误差
+      if (statusChangeDate) {
+        const statusChangeDateStr = this.formatDate(statusChangeDate);
+        const statusChangeMA = sortedMAData.find(
+          (ma) => this.formatDate(ma.tradeDate) === statusChangeDateStr,
+        );
+        if (statusChangeMA) {
+          statusChangePrice = Number(statusChangeMA.closePrice);
+        } else {
+          // 如果sortedMAData中没有状态转变日的数据，从数据库查询
+          const statusChangeMAFromDb = await this.maRepository.findOne({
+            where: {
+              indexId: index.id,
+              tradeDate: statusChangeDate,
+            },
+          });
+          if (statusChangeMAFromDb) {
+            statusChangePrice = Number(statusChangeMAFromDb.closePrice);
+          } else {
+            // 如果数据库中也没有，则通过公式反推
+            statusChangePrice =
+              prevTrendRecord.closePrice /
+              (1 + (prevTrendRecord.intervalChangePercent || 0) / 100);
+          }
+        }
+      }
+
+      // 调试日志：输出继承的状态信息
+      this.logger.debug(
+        `[${index.name}] 继承状态: previousStatus=${previousStatus}, ` +
+          `statusChangeDate=${statusChangeDate ? this.formatDate(statusChangeDate) : 'null'}, ` +
+          `statusChangePrice=${statusChangePrice}, ` +
+          `prevTrendRecord.closePrice=${prevTrendRecord.closePrice}, ` +
+          `prevTrendRecord.intervalChangePercent=${prevTrendRecord.intervalChangePercent}`,
+      );
     }
 
     for (let i = 0; i < sortedMAData.length; i++) {
@@ -1167,20 +1210,23 @@ export class TrendAnalysisService {
       const trendStatus: 'above' | 'below' =
         closePrice >= ma20 ? 'above' : 'below';
 
-      // 保存旧的状态转变信息用于计算区间涨幅
+      // 保存旧的状态转变价格和日期用于计算区间涨幅
       const oldStatusChangePrice = statusChangePrice;
       const oldStatusChangeDate = statusChangeDate;
 
       // 检测状态转变或首次计算
+      let isStatusChanged = false;
       if (previousStatus === null) {
         // 首次计算，初始化状态转变基准
         statusChangeDate = tradeDate;
         statusChangePrice = closePrice;
+        isStatusChanged = true;
       } else if (previousStatus !== trendStatus) {
         // 状态发生转变，记录转变日期和价格
-        // 使用上一交易日的收盘价作为基准，这样转变日当天的涨幅会被计入区间涨幅
+        // 使用当天的收盘价作为新的基准价格
         statusChangeDate = tradeDate;
-        statusChangePrice = i > 0 ? Number(sortedMAData[i - 1].closePrice) : closePrice;
+        statusChangePrice = closePrice;
+        isStatusChanged = true;
       }
 
       // 计算涨幅（相对上一交易日）- 使用MA数据中的前一条
@@ -1194,17 +1240,25 @@ export class TrendAnalysisService {
       const deviationRate = ((closePrice - ma20) / ma20) * 100;
 
       // 计算区间涨幅（从状态转变日到当前）
-      // 注意：如果状态在今天发生转变，区间涨幅应该从转变前的价格开始计算
+      // 如果状态在今天发生转变，使用上一次的基准价格计算区间涨幅
+      // 否则使用当前的基准价格（即状态转变日的收盘价）
       let intervalChangePercent: number | null = null;
       if (statusChangeDate !== null && statusChangePrice !== null) {
-        // 如果状态在今天发生转变，使用转变前的价格作为基准
-        // 否则使用状态转变日的价格
         const basePrice =
-          oldStatusChangeDate !== statusChangeDate &&
-          oldStatusChangePrice !== null
+          isStatusChanged && oldStatusChangePrice !== null
             ? oldStatusChangePrice
             : statusChangePrice;
         intervalChangePercent = ((closePrice - basePrice) / basePrice) * 100;
+
+        // 调试日志：输出区间涨幅计算详情
+        this.logger.debug(
+          `[${index.name}] ${this.formatDate(tradeDate)} 区间涨幅计算: ` +
+            `closePrice=${closePrice}, basePrice=${basePrice}, ` +
+            `isStatusChanged=${isStatusChanged}, ` +
+            `oldStatusChangePrice=${oldStatusChangePrice}, ` +
+            `statusChangePrice=${statusChangePrice}, ` +
+            `intervalChangePercent=${intervalChangePercent}`,
+        );
       }
 
       // 获取量比（如果有历史数据）
@@ -1643,7 +1697,32 @@ export class TrendAnalysisService {
       // 从最后一条记录继承状态
       previousStatus = latestTrendRecord.trendStatus;
       statusChangeDate = latestTrendRecord.statusChangeDate;
-      statusChangePrice = latestTrendRecord.closePrice;
+      // 从MA数据中查找状态转变日的收盘价，而不是使用最新记录的收盘价
+      if (statusChangeDate) {
+        const statusChangeDateStr = this.formatDate(statusChangeDate);
+        const statusChangeMA = sortedMAData.find(
+          (ma) => this.formatDate(ma.tradeDate) === statusChangeDateStr,
+        );
+        if (statusChangeMA) {
+          statusChangePrice = Number(statusChangeMA.closePrice);
+        } else {
+          // 如果sortedMAData中没有状态转变日的数据，从数据库查询
+          const statusChangeMAFromDb = await this.maRepository.findOne({
+            where: {
+              indexId: index.id,
+              tradeDate: statusChangeDate,
+            },
+          });
+          if (statusChangeMAFromDb) {
+            statusChangePrice = Number(statusChangeMAFromDb.closePrice);
+          } else {
+            // 如果数据库中也没有，则通过公式反推
+            statusChangePrice =
+              latestTrendRecord.closePrice /
+              (1 + (latestTrendRecord.intervalChangePercent || 0) / 100);
+          }
+        }
+      }
     }
 
     for (let i = 0; i < sortedMAData.length; i++) {
@@ -1656,16 +1735,23 @@ export class TrendAnalysisService {
       const trendStatus: 'above' | 'below' =
         closePrice >= ma20 ? 'above' : 'below';
 
+      // 保存旧的状态转变价格和日期用于计算区间涨幅
+      const oldStatusChangePrice = statusChangePrice;
+      const oldStatusChangeDate = statusChangeDate;
+
       // 检测状态转变或首次计算
+      let isStatusChanged = false;
       if (previousStatus === null) {
         // 首次计算，初始化状态转变基准
         statusChangeDate = tradeDate;
         statusChangePrice = closePrice;
+        isStatusChanged = true;
       } else if (previousStatus !== trendStatus) {
         // 状态发生转变，记录转变日期和价格
-        // 使用上一交易日的收盘价作为基准，这样转变日当天的涨幅会被计入区间涨幅
+        // 使用当天的收盘价作为新的基准价格
         statusChangeDate = tradeDate;
-        statusChangePrice = i > 0 ? Number(sortedMAData[i - 1].closePrice) : closePrice;
+        statusChangePrice = closePrice;
+        isStatusChanged = true;
       }
 
       // 计算涨幅（相对上一交易日）
@@ -1679,10 +1765,15 @@ export class TrendAnalysisService {
       const deviationRate = ((closePrice - ma20) / ma20) * 100;
 
       // 计算区间涨幅（从状态转变日到当前）
+      // 如果状态在今天发生转变，使用上一次的基准价格计算区间涨幅
+      // 否则使用当前的基准价格（即状态转变日的收盘价）
       let intervalChangePercent: number | null = null;
       if (statusChangeDate !== null && statusChangePrice !== null) {
-        intervalChangePercent =
-          ((closePrice - statusChangePrice) / statusChangePrice) * 100;
+        const basePrice =
+          isStatusChanged && oldStatusChangePrice !== null
+            ? oldStatusChangePrice
+            : statusChangePrice;
+        intervalChangePercent = ((closePrice - basePrice) / basePrice) * 100;
       }
 
       // 获取量比（如果有历史数据）
