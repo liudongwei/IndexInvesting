@@ -264,7 +264,7 @@ export class TrendAnalysisService {
 
     // 获取日期范围内所有应该有数据的日期（至少有一个指数有数据的日期）
     const allDates = new Set<string>();
-    
+
     // 从MA数据中获取所有日期
     const maDates = await this.maRepository
       .createQueryBuilder('ma')
@@ -274,7 +274,7 @@ export class TrendAnalysisService {
         endDate,
       })
       .getRawMany();
-    
+
     maDates.forEach((d) => allDates.add(this.formatDate(d.date)));
 
     if (allDates.size === 0) {
@@ -370,17 +370,24 @@ export class TrendAnalysisService {
         );
 
         // 使用 upsert 避免唯一约束冲突
-        await this.trendRepository.upsert(holidayData, ['indexId', 'tradeDate']);
+        await this.trendRepository.upsert(holidayData, [
+          'indexId',
+          'tradeDate',
+        ]);
         filledCount++;
 
         // 更新 lastTrendData 为当前填充的数据，用于后续连续节假日的填充
-        lastTrendData = { ...lastTrendData, ...holidayData, id: lastTrendData.id };
+        lastTrendData = {
+          ...lastTrendData,
+          ...holidayData,
+          id: lastTrendData.id,
+        };
       }
     }
 
     if (filledCount > 0) {
       this.logger.log(`节假日数据填充完成，共填充 ${filledCount} 条数据`);
-      
+
       // 重新计算所有受影响的日期的排名
       await this.recalculateRankingsForDates(sortedDates);
     }
@@ -419,9 +426,7 @@ export class TrendAnalysisService {
         const prevDayData = await this.trendRepository.find({
           where: { tradeDate: prevDate },
         });
-        prevRankMap = new Map(
-          prevDayData.map((d) => [d.indexId, d.rank]),
-        );
+        prevRankMap = new Map(prevDayData.map((d) => [d.indexId, d.rank]));
       }
 
       // 更新排名
@@ -679,11 +684,22 @@ export class TrendAnalysisService {
   async getTrendAnalysisByIndexId(
     indexId: string,
     limit: number = 100,
+    offset: number = 0,
   ): Promise<TrendAnalysis[]> {
     return this.trendRepository.find({
       where: { indexId },
       order: { tradeDate: 'DESC' },
       take: limit,
+      skip: offset,
+    });
+  }
+
+  /**
+   * 获取指定指数的趋势分析数据总数
+   */
+  async getTrendAnalysisCount(indexId: string): Promise<number> {
+    return this.trendRepository.count({
+      where: { indexId },
     });
   }
 
@@ -692,7 +708,13 @@ export class TrendAnalysisService {
    * 如果某个指数在最新日期没有数据，则使用其上一个交易日的数据补全
    * 确保排名列表始终包含所有活跃指数的全量数据
    */
-  async getLatestTrendRanking(): Promise<(TrendAnalysis & { isTodayData: boolean; actualDataDate: Date; prevDeviationRate: number | null })[]> {
+  async getLatestTrendRanking(): Promise<
+    (TrendAnalysis & {
+      isTodayData: boolean;
+      actualDataDate: Date;
+      prevDeviationRate: number | null;
+    })[]
+  > {
     // 1. 获取所有活跃的指数
     const indices = await this.indicesService.findAll();
     const activeIndices = indices.filter((i) => i.isActive);
@@ -732,7 +754,11 @@ export class TrendAnalysisService {
     const prevDataMap = new Map(prevData.map((d) => [d.indexId, d]));
 
     // 7. 为每个指数选择数据：优先用基准日期的，没有则用上一个交易日的
-    const result: (TrendAnalysis & { isTodayData: boolean; actualDataDate: Date; prevDeviationRate: number | null })[] = [];
+    const result: (TrendAnalysis & {
+      isTodayData: boolean;
+      actualDataDate: Date;
+      prevDeviationRate: number | null;
+    })[] = [];
 
     for (const index of activeIndices) {
       const latestRecord = latestDataMap.get(index.id);
@@ -743,21 +769,21 @@ export class TrendAnalysisService {
 
       if (latestRecord) {
         // 基准日期有数据，使用基准日期的
-        result.push({ 
-          ...latestRecord, 
-          isTodayData: true, 
+        result.push({
+          ...latestRecord,
+          isTodayData: true,
           actualDataDate: latestRecord.tradeDate,
-          prevDeviationRate 
+          prevDeviationRate,
         });
       } else if (prevRecord) {
         // 基准日期没有，使用上一个交易日的，并标记
         // 将 tradeDate 改为基准日期，但保留 actualDataDate 记录实际数据日期
-        result.push({ 
-          ...prevRecord, 
+        result.push({
+          ...prevRecord,
           tradeDate: latestDate, // 统一显示为基准日期
-          isTodayData: false, 
+          isTodayData: false,
           actualDataDate: prevRecord.tradeDate, // 记录实际数据日期
-          prevDeviationRate
+          prevDeviationRate,
         });
       }
       // 如果都没有，说明是新指数或数据缺失，跳过
@@ -807,7 +833,15 @@ export class TrendAnalysisService {
    * @param date 指定日期（格式：YYYY-MM-DD）
    * @returns 包含数据补全信息的趋势分析数组
    */
-  async getTrendRankingByDate(date: string): Promise<(TrendAnalysis & { isTodayData: boolean; actualDataDate: Date; prevDeviationRate: number | null })[]> {
+  async getTrendRankingByDate(
+    date: string,
+  ): Promise<
+    (TrendAnalysis & {
+      isTodayData: boolean;
+      actualDataDate: Date;
+      prevDeviationRate: number | null;
+    })[]
+  > {
     const tradeDate = new Date(date);
 
     // 验证日期格式
@@ -835,10 +869,12 @@ export class TrendAnalysisService {
 
     // 查询历史日期，需要获取前一天的偏离率来判断转换
     const prevDate = await this.getPreviousTradingDate(tradeDate);
-    const prevData = prevDate ? await this.trendRepository.find({
-      where: { tradeDate: prevDate },
-      relations: { index: true },
-    }) : [];
+    const prevData = prevDate
+      ? await this.trendRepository.find({
+          where: { tradeDate: prevDate },
+          relations: { index: true },
+        })
+      : [];
     const prevDataMap = new Map(prevData.map((d) => [d.indexId, d]));
 
     // 查询历史日期的数据
@@ -857,7 +893,7 @@ export class TrendAnalysisService {
     // 历史日期的数据全部标记为 isTodayData: true（因为是历史数据，不需要补全）
     // 但保留 prevDeviationRate 用于判断偏离率转换
     // 同时重新计算rankChange以确保准确性
-    return data.map(item => {
+    return data.map((item) => {
       const prevRank = prevRankMap.get(item.indexId);
       const rankChange = prevRank !== undefined ? prevRank - item.rank : 0;
       return {
@@ -1605,7 +1641,8 @@ export class TrendAnalysisService {
     return {
       total: savedCount,
       calculatedCount: allNewResults.size,
-      skippedCount: indicesToCalculate.length - allNewResults.size + skippedCount,
+      skippedCount:
+        indicesToCalculate.length - allNewResults.size + skippedCount,
       results: indexResults,
     };
   }

@@ -17,6 +17,7 @@ export interface IndexTrendHistoryItem extends TrendRankingItem {
 export interface IndexTrendHistoryResponse {
   success: boolean;
   count: number;
+  total: number;
   data: IndexTrendHistoryItem[];
 }
 
@@ -140,8 +141,14 @@ export async function getIndexByOfficialCode(officialCode: string): Promise<Inde
 /**
  * 获取指定指数的趋势历史数据
  */
-export async function getIndexTrendHistory(indexId: string, limit: number = 20): Promise<IndexTrendHistoryResponse> {
-  const response = await fetch(`${API_BASE_URL}/trend-analysis/${encodeURIComponent(indexId)}?limit=${limit}`);
+export async function getIndexTrendHistory(
+  indexId: string,
+  limit: number = 20,
+  offset: number = 0,
+): Promise<IndexTrendHistoryResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/trend-analysis/${encodeURIComponent(indexId)}?limit=${limit}&offset=${offset}`,
+  );
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }

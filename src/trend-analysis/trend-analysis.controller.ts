@@ -97,9 +97,11 @@ export class TrendAnalysisController {
         isWeekend, // 是否周末
         isTradingDay: !isWeekend, // 是否交易日
         isClosed: !isWeekend && currentTime >= 15 * 60 + 5, // 15:05后且非周末
-        nextUpdate: isWeekend 
-          ? '下周一15:05' 
-          : (currentTime < 15 * 60 + 5 ? '15:05' : '次日15:05'),
+        nextUpdate: isWeekend
+          ? '下周一15:05'
+          : currentTime < 15 * 60 + 5
+            ? '15:05'
+            : '次日15:05',
       },
       // 港股: 16:00收盘，16:05后视为已收盘（周末休市）
       hk: {
@@ -108,9 +110,11 @@ export class TrendAnalysisController {
         isWeekend,
         isTradingDay: !isWeekend,
         isClosed: !isWeekend && currentTime >= 16 * 60 + 5, // 16:05后且非周末
-        nextUpdate: isWeekend 
-          ? '下周一16:05' 
-          : (currentTime < 16 * 60 + 5 ? '16:05' : '次日16:05'),
+        nextUpdate: isWeekend
+          ? '下周一16:05'
+          : currentTime < 16 * 60 + 5
+            ? '16:05'
+            : '次日16:05',
       },
       // 欧洲: 夏令时23:30/冬令时00:30收盘，统一按00:35处理（周末休市）
       europe: {
@@ -118,10 +122,13 @@ export class TrendAnalysisController {
         closeTime: '00:30',
         isWeekend,
         isTradingDay: !isWeekend,
-        isClosed: !isWeekend && currentTime >= 0 * 60 + 35 && currentTime < 5 * 60 + 5,
-        nextUpdate: isWeekend 
-          ? '下周一00:35' 
-          : (currentTime >= 0 * 60 + 35 && currentTime < 5 * 60 + 5 ? '次日00:35' : '00:35'),
+        isClosed:
+          !isWeekend && currentTime >= 0 * 60 + 35 && currentTime < 5 * 60 + 5,
+        nextUpdate: isWeekend
+          ? '下周一00:35'
+          : currentTime >= 0 * 60 + 35 && currentTime < 5 * 60 + 5
+            ? '次日00:35'
+            : '00:35',
       },
       // 美股: 夏令时04:00/冬令时05:00收盘，统一按05:05处理（周末休市）
       us: {
@@ -129,10 +136,13 @@ export class TrendAnalysisController {
         closeTime: '05:00',
         isWeekend,
         isTradingDay: !isWeekend,
-        isClosed: !isWeekend && currentTime >= 5 * 60 + 5 && currentTime < 6 * 60,
-        nextUpdate: isWeekend 
-          ? '下周一05:05' 
-          : (currentTime >= 5 * 60 + 5 && currentTime < 6 * 60 ? '次日05:05' : '05:05'),
+        isClosed:
+          !isWeekend && currentTime >= 5 * 60 + 5 && currentTime < 6 * 60,
+        nextUpdate: isWeekend
+          ? '下周一05:05'
+          : currentTime >= 5 * 60 + 5 && currentTime < 6 * 60
+            ? '次日05:05'
+            : '05:05',
       },
       // 贵金属: 24小时交易，06:00最后同步（周末也交易）
       metal: {
@@ -148,7 +158,9 @@ export class TrendAnalysisController {
     return {
       success: true,
       currentTime: `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`,
-      dayOfWeek: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][dayOfWeek],
+      dayOfWeek: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][
+        dayOfWeek
+      ],
       isWeekend,
       markets: marketStatus,
     };
@@ -166,9 +178,11 @@ export class TrendAnalysisController {
   ) {
     // 使用传入的参数或当前时间
     const h = hour !== undefined ? parseInt(hour, 10) : new Date().getHours();
-    const m = minute !== undefined ? parseInt(minute, 10) : new Date().getMinutes();
-    const dow = dayOfWeek !== undefined ? parseInt(dayOfWeek, 10) : new Date().getDay();
-    
+    const m =
+      minute !== undefined ? parseInt(minute, 10) : new Date().getMinutes();
+    const dow =
+      dayOfWeek !== undefined ? parseInt(dayOfWeek, 10) : new Date().getDay();
+
     const currentTime = h * 60 + m;
     const isWeekend = dow === 0 || dow === 6;
 
@@ -179,7 +193,11 @@ export class TrendAnalysisController {
         isWeekend,
         isTradingDay: !isWeekend,
         isClosed: !isWeekend && currentTime >= 15 * 60 + 5,
-        nextUpdate: isWeekend ? '下周一15:05' : (currentTime < 15 * 60 + 5 ? '15:05' : '次日15:05'),
+        nextUpdate: isWeekend
+          ? '下周一15:05'
+          : currentTime < 15 * 60 + 5
+            ? '15:05'
+            : '次日15:05',
       },
       hk: {
         name: '港股',
@@ -187,23 +205,37 @@ export class TrendAnalysisController {
         isWeekend,
         isTradingDay: !isWeekend,
         isClosed: !isWeekend && currentTime >= 16 * 60 + 5,
-        nextUpdate: isWeekend ? '下周一16:05' : (currentTime < 16 * 60 + 5 ? '16:05' : '次日16:05'),
+        nextUpdate: isWeekend
+          ? '下周一16:05'
+          : currentTime < 16 * 60 + 5
+            ? '16:05'
+            : '次日16:05',
       },
       europe: {
         name: '欧洲',
         closeTime: '00:30',
         isWeekend,
         isTradingDay: !isWeekend,
-        isClosed: !isWeekend && currentTime >= 0 * 60 + 35 && currentTime < 5 * 60 + 5,
-        nextUpdate: isWeekend ? '下周一00:35' : (currentTime >= 0 * 60 + 35 && currentTime < 5 * 60 + 5 ? '次日00:35' : '00:35'),
+        isClosed:
+          !isWeekend && currentTime >= 0 * 60 + 35 && currentTime < 5 * 60 + 5,
+        nextUpdate: isWeekend
+          ? '下周一00:35'
+          : currentTime >= 0 * 60 + 35 && currentTime < 5 * 60 + 5
+            ? '次日00:35'
+            : '00:35',
       },
       us: {
         name: '美股',
         closeTime: '05:00',
         isWeekend,
         isTradingDay: !isWeekend,
-        isClosed: !isWeekend && currentTime >= 5 * 60 + 5 && currentTime < 6 * 60,
-        nextUpdate: isWeekend ? '下周一05:05' : (currentTime >= 5 * 60 + 5 && currentTime < 6 * 60 ? '次日05:05' : '05:05'),
+        isClosed:
+          !isWeekend && currentTime >= 5 * 60 + 5 && currentTime < 6 * 60,
+        nextUpdate: isWeekend
+          ? '下周一05:05'
+          : currentTime >= 5 * 60 + 5 && currentTime < 6 * 60
+            ? '次日05:05'
+            : '05:05',
       },
       metal: {
         name: '贵金属',
@@ -217,7 +249,8 @@ export class TrendAnalysisController {
 
     return {
       success: true,
-      simulated: hour !== undefined || minute !== undefined || dayOfWeek !== undefined,
+      simulated:
+        hour !== undefined || minute !== undefined || dayOfWeek !== undefined,
       currentTime: `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`,
       dayOfWeek: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][dow],
       isWeekend,
@@ -379,8 +412,12 @@ export class TrendAnalysisController {
       }));
 
       // 统计数据情况
-      const todayDataCount = formatted.filter((item) => item.isTodayData).length;
-      const prevDataCount = formatted.filter((item) => !item.isTodayData).length;
+      const todayDataCount = formatted.filter(
+        (item) => item.isTodayData,
+      ).length;
+      const prevDataCount = formatted.filter(
+        (item) => !item.isTodayData,
+      ).length;
 
       return {
         success: true,
@@ -402,15 +439,21 @@ export class TrendAnalysisController {
   @ApiOperation({ summary: '获取指定指数的趋势分析历史' })
   async getTrendHistory(
     @Param('indexId') indexId: string,
-    @Query('limit') limit: string = '100',
+    @Query('limit') limit: string = '20',
+    @Query('offset') offset: string = '0',
   ) {
-    const data = await this.trendService.getTrendAnalysisByIndexId(
-      indexId,
-      parseInt(limit, 10),
-    );
+    const [data, total] = await Promise.all([
+      this.trendService.getTrendAnalysisByIndexId(
+        indexId,
+        parseInt(limit, 10),
+        parseInt(offset, 10),
+      ),
+      this.trendService.getTrendAnalysisCount(indexId),
+    ]);
     return {
       success: true,
       count: data.length,
+      total,
       data,
     };
   }

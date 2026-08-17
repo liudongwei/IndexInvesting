@@ -20,6 +20,8 @@ export function IndexDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [indexIdState, setIndexIdState] = useState<string | null>(null);
 
   useEffect(() => {
     if (!indexId) {
@@ -29,6 +31,25 @@ export function IndexDetail() {
     }
     loadIndexData(indexId);
   }, [indexId]);
+
+  // 加载指定页的数据
+  const loadPageData = async (page: number, id: string) => {
+    setLoading(true);
+    try {
+      const offset = (page - 1) * PAGE_SIZE;
+      const response = await getIndexTrendHistory(id, PAGE_SIZE, offset);
+      if (response.success) {
+        setData(response.data);
+        setTotalCount(response.total);
+      } else {
+        setError('获取数据失败');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '获取数据失败');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadIndexData = async (code: string) => {
     setLoading(true);
@@ -49,23 +70,13 @@ export function IndexDetail() {
       }
 
       setIndexInfo(index);
+      setIndexIdState(index.id);
+      setCurrentPage(1);
 
-      // 获取趋势历史数据（获取全量数据，最多10000条）
-      const response = await getIndexTrendHistory(index.id, 10000);
-      if (response.success && response.data.length > 0) {
-        // 按交易日期倒序排列（从晚到早）
-        const sortedData = [...response.data].sort(
-          (a, b) =>
-            new Date(b.tradeDate).getTime() - new Date(a.tradeDate).getTime(),
-        );
-        setData(sortedData);
-        setCurrentPage(1);
-      } else {
-        setError('暂无趋势数据');
-      }
+      // 加载第一页数据
+      await loadPageData(1, index.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取数据失败');
-    } finally {
       setLoading(false);
     }
   };
@@ -124,16 +135,14 @@ export function IndexDetail() {
     return `${change}`;
   };
 
-  // 分页计算
-  const totalPages = Math.ceil(data.length / PAGE_SIZE);
-  const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const endIndex = startIndex + PAGE_SIZE;
-  const currentData = data.slice(startIndex, endIndex);
+  // 分页计算（基于总数）
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
   // 页码变化处理
-  const handlePageChange = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
+  const handlePageChange = async (page: number) => {
+    if (page >= 1 && page <= totalPages && indexIdState) {
       setCurrentPage(page);
+      await loadPageData(page, indexIdState);
     }
   };
 
@@ -203,7 +212,7 @@ export function IndexDetail() {
                 {indexInfo?.name} ({indexInfo?.officialCode || indexInfo?.code})
               </h1>
               <p className="text-sm text-gray-500 mt-1">
-                共 {data.length} 条趋势历史数据（每页20条，按日期倒序）
+                共 {totalCount} 条趋势历史数据（每页20条，按日期倒序）
               </p>
             </div>
             <button
@@ -236,9 +245,9 @@ export function IndexDetail() {
                 </tr>
               </thead>
               <tbody>
-                {currentData.map((item, index) => {
+                {data.map((item: IndexTrendHistoryItem, index: number) => {
                   // 获取前一条数据的偏离率用于判断转换（在分页内判断）
-                  const prevItem = index > 0 ? currentData[index - 1] : null;
+                  const prevItem = index > 0 ? data[index - 1] : null;
                   const prevDeviationRate = prevItem
                     ? prevItem.deviationRate
                     : null;
@@ -288,10 +297,10 @@ export function IndexDetail() {
         </div>
 
         {/* 分页组件 */}
-        {totalPages > 1 && (
+        {totalPages > 0 && (
           <div className="mt-4 flex items-center justify-between bg-white px-4 py-3 rounded-lg shadow">
             <div className="text-sm text-gray-500">
-              共 {data.length} 条数据，第 {currentPage} / {totalPages} 页
+              共 {totalCount} 条数据，第 {currentPage} / {totalPages} 页
             </div>
             <div className="flex items-center gap-1">
               {/* 上一页 */}
