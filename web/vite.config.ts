@@ -10,7 +10,7 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+        // 保留 /api 前缀，与 NestJS 全局前缀保持一致
       },
     },
   },

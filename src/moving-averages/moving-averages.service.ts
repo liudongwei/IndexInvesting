@@ -373,6 +373,82 @@ export class MovingAveragesService {
   }
 
   /**
+   * 为指定指数列表计算MA数据（市场同步后调用）
+   * 只计算有新增数据的指数，使用增量模式
+   * @param indices 指数列表
+   * @param marketName 市场名称（用于日志）
+   */
+  async calculateMAForIndices(
+    indices: Index[],
+    marketName: string = '指定市场',
+  ): Promise<{
+    total: number;
+    calculatedCount: number;
+    skippedCount: number;
+    results: { indexName: string; count: number }[];
+  }> {
+    this.logger.log(
+      `[${marketName}] 开始计算移动平均线，共 ${indices.length} 个指数...`,
+    );
+
+    // 筛选出需要计算的指数
+    const indicesToCalculate =
+      await this.getIndicesNeedingMACalculation(indices);
+    const skippedCount = indices.length - indicesToCalculate.length;
+
+    if (skippedCount > 0) {
+      this.logger.log(`[${marketName}] ${skippedCount} 个指数已是最新，跳过`);
+    }
+
+    if (indicesToCalculate.length === 0) {
+      this.logger.log(`[${marketName}] 所有指数MA数据都已是最新`);
+      return {
+        total: 0,
+        calculatedCount: 0,
+        skippedCount,
+        results: [],
+      };
+    }
+
+    this.logger.log(
+      `[${marketName}] 实际计算 ${indicesToCalculate.length} 个指数`,
+    );
+
+    const results: { indexName: string; count: number }[] = [];
+    let totalCount = 0;
+
+    for (const index of indicesToCalculate) {
+      try {
+        const result = await this.calculateAndSaveMAIncrementally(index);
+        results.push({
+          indexName: result.indexName,
+          count: result.calculatedCount,
+        });
+        totalCount += result.calculatedCount;
+      } catch (error) {
+        this.logger.error(
+          `[${marketName}] 计算 ${index.name} MA失败: ${error.message}`,
+        );
+        results.push({
+          indexName: index.name,
+          count: 0,
+        });
+      }
+    }
+
+    this.logger.log(
+      `[${marketName}] MA计算完成，共 ${totalCount} 条数据，跳过 ${skippedCount} 个`,
+    );
+
+    return {
+      total: totalCount,
+      calculatedCount: indicesToCalculate.length,
+      skippedCount,
+      results,
+    };
+  }
+
+  /**
    * 批量计算所有指数的MA数据（只计算需要更新的）
    * 默认使用增量计算模式，只计算新增的数据
    */
@@ -467,6 +543,153 @@ export class MovingAveragesService {
       skipped: skippedCount,
       fullCalculated: fullCount,
       incrementalCalculated: incrementalCount,
+      results,
+    };
+  }
+
+  /**
+   * 根据最近N个交易日重新计算移动均线（单个指数）
+   * @param index 指数对象
+   * @param tradingDays 最近N个交易日（默认5天）
+   * @returns 计算结果
+   */
+  async recalculateMAForRecentTradingDays(
+    index: Index,
+    tradingDays: number = 5,
+  ): Promise<{
+    indexName: string;
+    calculatedCount: number;
+    dateRange: { from: string; to: string } | null;
+  }> {
+    this.logger.log(`[${index.name}] 开始重新计算最近 ${tradingDays} 个交易日的移动平均线...`);
+
+    // 1. 获取最近N+60个交易日的历史数据（确保MA60能正确计算）
+    const totalDaysNeeded = tradingDays + 60;
+    const histories = await this.historyRepository.find({
+      where: { indexId: index.id },
+      order: { tradeDate: 'DESC' },
+      take: totalDaysNeeded,
+    });
+
+    if (histories.length === 0) {
+      this.logger.warn(`${index.name} 没有历史数据`);
+      return {
+        indexName: index.name,
+        calculatedCount: 0,
+        dateRange: null,
+      };
+    }
+
+    // 2. 按日期升序排列用于计算
+    const sortedHistories = [...histories].sort(
+      (a, b) => new Date(a.tradeDate).getTime() - new Date(b.tradeDate).getTime(),
+    );
+
+    // 3. 计算MA（使用全部数据确保准确性）
+    const allResults = this.calculateMAForIndex(index.id, sortedHistories);
+
+    // 4. 只取最近N个交易日的结果
+    const recentResults = allResults.slice(-tradingDays);
+
+    // 5. 删除这些日期的旧MA数据（使用 In 操作符）
+    const tradeDates = recentResults.map((r) =>
+      this.formatDateToString(r.tradeDate),
+    );
+    await this.maRepository
+      .createQueryBuilder()
+      .delete()
+      .from(MovingAverage)
+      .where('indexId = :indexId', { indexId: index.id })
+      .andWhere('tradeDate IN (:...tradeDates)', { tradeDates })
+      .execute();
+
+    // 6. 保存新的MA数据
+    const savedCount = await this.saveMACalculations(index.id, recentResults);
+
+    const fromDate = this.formatDateToString(recentResults[0].tradeDate);
+    const toDate = this.formatDateToString(
+      recentResults[recentResults.length - 1].tradeDate,
+    );
+
+    this.logger.log(
+      `[${index.name}] 重新计算完成，共 ${savedCount} 条数据，日期范围: ${fromDate} 至 ${toDate}`,
+    );
+
+    return {
+      indexName: index.name,
+      calculatedCount: savedCount,
+      dateRange: {
+        from: fromDate,
+        to: toDate,
+      },
+    };
+  }
+
+  /**
+   * 批量重新计算所有指数的最近N个交易日移动均线
+   * @param indices 指数列表
+   * @param tradingDays 最近N个交易日（默认5天）
+   * @returns 批量计算结果
+   */
+  async recalculateMAForAllIndices(
+    indices: Index[],
+    tradingDays: number = 5,
+  ): Promise<{
+    total: number;
+    success: number;
+    failed: number;
+    results: {
+      indexName: string;
+      calculatedCount: number;
+      success: boolean;
+      error?: string;
+    }[];
+  }> {
+    this.logger.log(`开始批量重新计算 ${indices.length} 个指数的最近 ${tradingDays} 个交易日MA...`);
+
+    const results: {
+      indexName: string;
+      calculatedCount: number;
+      success: boolean;
+      error?: string;
+    }[] = [];
+    let totalCount = 0;
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (const index of indices) {
+      try {
+        const result = await this.recalculateMAForRecentTradingDays(
+          index,
+          tradingDays,
+        );
+        results.push({
+          indexName: result.indexName,
+          calculatedCount: result.calculatedCount,
+          success: true,
+        });
+        totalCount += result.calculatedCount;
+        successCount++;
+      } catch (error) {
+        this.logger.error(`[${index.name}] 重新计算MA失败: ${error.message}`);
+        results.push({
+          indexName: index.name,
+          calculatedCount: 0,
+          success: false,
+          error: error.message,
+        });
+        failedCount++;
+      }
+    }
+
+    this.logger.log(
+      `批量重新计算完成，成功: ${successCount}，失败: ${failedCount}，共 ${totalCount} 条数据`,
+    );
+
+    return {
+      total: totalCount,
+      success: successCount,
+      failed: failedCount,
       results,
     };
   }

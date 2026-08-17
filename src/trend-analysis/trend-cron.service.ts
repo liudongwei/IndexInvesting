@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { TrendAnalysisService } from './trend-analysis.service';
 import { IndicesService } from '../indices/indices.service';
@@ -9,6 +9,7 @@ export class TrendCronService {
 
   constructor(
     private readonly trendService: TrendAnalysisService,
+    @Inject(forwardRef(() => IndicesService))
     private readonly indicesService: IndicesService,
   ) {}
 
@@ -16,8 +17,10 @@ export class TrendCronService {
    * 定时任务：每天早上7点执行趋势分析（MA计算完成后）
    * 等MA计算完成（06:30）后再执行趋势分析
    * 使用增量计算模式，只计算新增的数据
+   * 
+   * 注意：已改为市场同步后实时计算，此定时任务仅作为兜底备份
    */
-  @Cron('0 7 * * *')
+  // @Cron('0 7 * * *')
   async handleDailyTrendAnalysis() {
     this.logger.log('执行定时趋势分析任务（MA计算已完成，增量模式）...');
     try {

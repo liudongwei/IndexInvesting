@@ -496,55 +496,6 @@ export class EastmoneyDataService {
   }
 
   /**
-   * 预览东财数据文件内容
-   * @param filePath JSON文件路径
-   * @param limit 预览条数
-   * @returns 预览数据
-   */
-  async previewData(
-    filePath: string,
-    limit: number = 10,
-  ): Promise<{
-    success: boolean;
-    message: string;
-    code?: string;
-    name?: string;
-    total?: number;
-    preview?: EastmoneyKlineItem[];
-  }> {
-    try {
-      const resolvedPath = this.resolveFilePath(filePath);
-
-      if (!fs.existsSync(resolvedPath)) {
-        return {
-          success: false,
-          message: `文件不存在: ${resolvedPath}`,
-        };
-      }
-
-      const data = await this.readEastmoneyFile(resolvedPath);
-      const klines = data.data.klines.slice(0, limit);
-      const preview = klines
-        .map((kline) => this.parseKlineString(kline))
-        .filter((item): item is EastmoneyKlineItem => item !== null);
-
-      return {
-        success: true,
-        message: '预览数据获取成功',
-        code: data.data.code,
-        name: data.data.name,
-        total: data.data.klines.length,
-        preview,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: `预览失败: ${error.message}`,
-      };
-    }
-  }
-
-  /**
    * 将通用代码转换为东财secid格式
    * @param code 通用代码，如 sh000300, sz399001, hk00700
    * @returns 东财secid格式，如 1.000300, 0.399001, 116.00700

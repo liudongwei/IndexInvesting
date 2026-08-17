@@ -11,6 +11,11 @@ export interface TrendRankingItem {
   statusChangeDate: string;
   intervalChangePercent: number;
   rankChange: number;
+  isTodayData?: boolean; // 是否为当天数据（true-当天，false-补全的上个交易日数据）
+  dataDate?: string; // 数据实际来源日期
+  tradeDate?: string; // 统一为基准日期（最新日期）
+  marketStatus?: 'closed' | 'updating' | 'open'; // 市场状态
+  prevDeviationRate?: number | null; // 昨天的偏离率，用于判断正负转换
 }
 
 // API响应格式

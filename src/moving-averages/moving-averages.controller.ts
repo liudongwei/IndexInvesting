@@ -22,6 +22,35 @@ export class MovingAveragesController {
     };
   }
 
+  @Post('recalculate-recent/:indexId')
+  @ApiOperation({
+    summary: '重新计算最近N个交易日的MA数据',
+    description: '根据历史记录重新计算最近N个交易日的移动均线，默认5个交易日。会先删除旧数据再重新计算。',
+  })
+  async recalculateRecent(
+    @Param('indexId') indexId: string,
+    @Query('days') days: string = '5',
+  ) {
+    const index = await this.indicesService.findOne(indexId);
+    const tradingDays = parseInt(days, 10);
+
+    if (isNaN(tradingDays) || tradingDays < 1 || tradingDays > 100) {
+      return {
+        success: false,
+        message: 'days参数错误，请输入1-100之间的整数',
+      };
+    }
+
+    const result = await this.maService.recalculateMAForRecentTradingDays(
+      index,
+      tradingDays,
+    );
+    return {
+      success: true,
+      ...result,
+    };
+  }
+
   @Post('calculate-all')
   @ApiOperation({ summary: '批量计算所有指数的MA数据' })
   async calculateForAllIndices() {
@@ -30,6 +59,35 @@ export class MovingAveragesController {
     return {
       success: true,
       ...result,
+    };
+  }
+
+  @Post('recalculate-recent-all')
+  @ApiOperation({
+    summary: '批量重新计算所有指数的最近N个交易日MA数据',
+    description: '针对所有指数，根据历史记录重新计算最近N个交易日的移动均线，默认5个交易日。',
+  })
+  async recalculateRecentForAllIndices(@Query('days') days: string = '5') {
+    const indices = await this.indicesService.findAll();
+    const tradingDays = parseInt(days, 10);
+
+    if (isNaN(tradingDays) || tradingDays < 1 || tradingDays > 100) {
+      return {
+        success: false,
+        message: 'days参数错误，请输入1-100之间的整数',
+      };
+    }
+
+    const result = await this.maService.recalculateMAForAllIndices(
+      indices,
+      tradingDays,
+    );
+    return {
+      success: true,
+      total: result.total,
+      successCount: result.success,
+      failedCount: result.failed,
+      results: result.results,
     };
   }
 
