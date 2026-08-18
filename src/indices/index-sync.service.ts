@@ -673,6 +673,21 @@ export class IndexSyncService {
         newData = data.filter((item) => item.date > latestDateStr);
       }
 
+      // 贵金属特殊处理：如果在结算休市后不久获取数据，过滤掉当天的不完整数据
+      if (this.isPreciousMetal(index)) {
+        const dateToFilter = this.getPreciousMetalDateToFilter();
+        if (dateToFilter) {
+          const beforeFilterCount = newData.length;
+          newData = newData.filter((item) => item.date !== dateToFilter);
+          const filteredCount = beforeFilterCount - newData.length;
+          if (filteredCount > 0) {
+            this.logger.log(
+              `[${index.name}] 贵金属数据过滤：跳过 ${dateToFilter} 的 ${filteredCount} 条不完整数据（结算休市后刚开盘）`,
+            );
+          }
+        }
+      }
+
       if (newData.length === 0) {
         this.logger.log(`没有新数据需要同步`);
         return 0;
@@ -887,6 +902,107 @@ export class IndexSyncService {
   }
 
   /**
+   * 判断指定日期是否为夏令时
+   * 夏令时：每年3月第二个星期日至11月第一个星期日
+   * @param date 要判断的日期，默认为当前日期
+   * @returns 是否为夏令时
+   */
+  private isDaylightSavingTime(date: Date = new Date()): boolean {
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1; // 1-12
+    const day = date.getDate();
+    const dayOfWeek = date.getDay(); // 0=周日, 1=周一...
+
+    // 3月第二个星期日开始
+    const marchSecondSunday = this.getNthWeekdayOfMonth(year, 3, 0, 2);
+    // 11月第一个星期日结束
+    const novemberFirstSunday = this.getNthWeekdayOfMonth(year, 11, 0, 1);
+
+    const currentDate = new Date(year, month - 1, day);
+
+    return (
+      currentDate >= marchSecondSunday && currentDate < novemberFirstSunday
+    );
+  }
+
+  /**
+   * 获取某月第N个星期几的日期
+   * @param year 年份
+   * @param month 月份 (1-12)
+   * @param dayOfWeek 星期几 (0=周日, 1=周一...)
+   * @param n 第几个 (1, 2, 3...)
+   * @returns 日期对象
+   */
+  private getNthWeekdayOfMonth(
+    year: number,
+    month: number,
+    dayOfWeek: number,
+    n: number,
+  ): Date {
+    const firstDayOfMonth = new Date(year, month - 1, 1);
+    const firstDayOfWeek = firstDayOfMonth.getDay();
+
+    // 计算第一个目标星期几的日期
+    let daysUntilTarget = (dayOfWeek - firstDayOfWeek + 7) % 7;
+    const firstTargetDate = 1 + daysUntilTarget;
+
+    // 计算第N个目标星期几的日期
+    const targetDate = firstTargetDate + (n - 1) * 7;
+
+    return new Date(year, month - 1, targetDate);
+  }
+
+  /**
+   * 判断当前时间是否在贵金属结算休市期间
+   * 夏令时：每天05:00-06:00休市
+   * 冬令时：每天06:00-07:00休市
+   * @returns 是否在休市期间
+   */
+  private isInPreciousMetalSettlementTime(): boolean {
+    const now = new Date();
+    const hour = now.getHours();
+    const isDST = this.isDaylightSavingTime(now);
+
+    if (isDST) {
+      // 夏令时：05:00-06:00休市
+      return hour === 5;
+    } else {
+      // 冬令时：06:00-07:00休市
+      return hour === 6;
+    }
+  }
+
+  /**
+   * 获取贵金属数据应该过滤的日期
+   * 如果在结算休市后不久获取数据，需要过滤掉当天的数据（因为数据不完整）
+   * @returns 需要过滤掉的日期字符串 (YYYY-MM-DD)，如果没有则返回null
+   */
+  private getPreciousMetalDateToFilter(): string | null {
+    const now = new Date();
+    const hour = now.getHours();
+    const isDST = this.isDaylightSavingTime(now);
+
+    // 夏令时：06:05左右获取数据时，当天的数据还不完整（刚开盘），需要过滤
+    // 冬令时：07:05左右获取数据时，当天的数据还不完整（刚开盘），需要过滤
+    let shouldFilterToday = false;
+
+    if (isDST) {
+      // 夏令时：06:00开盘，06:05获取数据时当天数据不完整
+      shouldFilterToday = hour === 6;
+    } else {
+      // 冬令时：07:00开盘，07:05获取数据时当天数据不完整
+      shouldFilterToday = hour === 7;
+    }
+
+    if (shouldFilterToday) {
+      // 返回今天的日期，这条数据应该被过滤
+      return now.toISOString().split('T')[0];
+    }
+
+    return null;
+  }
+
+  /**
    * 判断指数是否属于欧洲市场
    * 欧洲：夏令时23:30/冬令时00:30收盘（北京时间）
    */
@@ -1034,7 +1150,7 @@ export class IndexSyncService {
    * 定时任务：港股收盘后同步（16:05）
    * 港股交易时间 9:30-16:00，延迟5分钟后同步
    */
-  @Cron('5 16 * * *')
+  @Cron('15 16 * * *')
   async handleHKStockSync() {
     this.logger.log('港股交易时间结束（延迟5分钟），执行数据同步...');
     try {
@@ -1125,12 +1241,20 @@ export class IndexSyncService {
   }
 
   /**
-   * 定时任务：贵金属同步（06:00）
-   * 贵金属24小时交易，在美股收盘后1小时同步，确保数据完整
+   * 定时任务：贵金属同步（07:05）
+   * 贵金属24小时交易，但有每日结算休市时间：
+   * - 夏令时（3月-11月）：每天05:00-06:00休市
+   * - 冬令时（11月-3月）：每天06:00-07:00休市
+   * 统一在07:05执行，确保冬夏令时数据都完整
+   * 注意：夏令时06:05获取的数据会过滤掉当天的不完整数据
    */
-  @Cron('5 6 * * *')
+  @Cron('5 7 * * *')
   async handlePreciousMetalSync() {
-    this.logger.log('执行贵金属数据同步（24小时交易，美股收盘后1小时）...');
+    const isDST = this.isDaylightSavingTime();
+    const dstStatus = isDST ? '夏令时' : '冬令时';
+    this.logger.log(
+      `执行贵金属数据同步（${dstStatus}，结算休市后获取数据）...`,
+    );
     try {
       const result = await this.syncIndicesByMarket(
         (index) => this.isPreciousMetal(index),
