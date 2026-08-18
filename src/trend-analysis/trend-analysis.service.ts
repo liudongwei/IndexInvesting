@@ -1,6 +1,6 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, Between } from 'typeorm';
+import { Repository, LessThan, Between, Raw } from 'typeorm';
 import { TrendAnalysis } from './entities/trend-analysis.entity';
 import { MovingAverage } from '../moving-averages/entities/moving-average.entity';
 import { IndexHistory } from '../indices/entities/index-history.entity';
@@ -44,11 +44,13 @@ export class TrendAnalysisService {
    * @param index 指数信息
    * @param maData 该指数的MA数据（按日期升序）
    * @param allIndicesMAData 所有指数的最新MA数据（用于排名）
+   * @param historyDataMap 历史数据Map（用于量比计算）
    */
   async calculateTrendForIndex(
     index: Index,
     maData: MovingAverage[],
     allIndicesMAData: Map<string, MovingAverage>,
+    historyDataMap?: Map<string, IndexHistory>,
   ): Promise<TrendAnalysisResult[]> {
     if (maData.length === 0) {
       return [];
@@ -117,7 +119,11 @@ export class TrendAnalysisService {
       }
 
       // 获取量比（如果有历史数据）
-      const volumeRatio = await this.calculateVolumeRatio(index.id, tradeDate);
+      // 【性能优化】使用传入的historyDataMap，避免循环中查询数据库
+      let volumeRatio: number | null = null;
+      if (historyDataMap) {
+        volumeRatio = await this.calculateVolumeRatio(index.id, tradeDate, historyDataMap);
+      }
 
       results.push({
         indexId: index.id,
@@ -147,38 +153,47 @@ export class TrendAnalysisService {
 
   /**
    * 计算量比（当日成交量 / 前5日平均成交量）
+   * 【性能优化】改为批量获取历史数据，避免循环中多次查询数据库
    */
   private async calculateVolumeRatio(
     indexId: string,
     tradeDate: Date,
+    historyDataMap: Map<string, IndexHistory>,
   ): Promise<number | null> {
     try {
-      // 获取当日成交量
-      const currentDay = await this.historyRepository.findOne({
-        where: { indexId, tradeDate },
-      });
+      const dateStr = this.formatDate(tradeDate);
+      // 从缓存中获取当日成交量
+      const currentDay = historyDataMap.get(dateStr);
 
       if (!currentDay || !currentDay.volume) {
         return null;
       }
 
-      // 获取前5个交易日的成交量
-      const prev5Days = await this.historyRepository.find({
-        where: {
-          indexId,
-          tradeDate: LessThan(tradeDate),
-        },
-        order: { tradeDate: 'DESC' },
-        take: 5,
-      });
+      // 获取前5个交易日的成交量（从历史数据列表中查找）
+      const tradeDateTime = new Date(tradeDate).getTime();
+      const prev5Days: IndexHistory[] = [];
 
-      if (prev5Days.length === 0) {
+      // 遍历历史数据Map，找出前5个交易日
+      for (const [key, history] of historyDataMap.entries()) {
+        const historyDateTime = new Date(history.tradeDate).getTime();
+        if (historyDateTime < tradeDateTime) {
+          prev5Days.push(history);
+        }
+      }
+
+      // 按日期降序排序，取前5个
+      prev5Days.sort((a, b) =>
+        new Date(b.tradeDate).getTime() - new Date(a.tradeDate).getTime(),
+      );
+      const selectedDays = prev5Days.slice(0, 5);
+
+      if (selectedDays.length === 0) {
         return null;
       }
 
       const avgVolume =
-        prev5Days.reduce((sum, h) => sum + (Number(h.volume) || 0), 0) /
-        prev5Days.length;
+        selectedDays.reduce((sum, h) => sum + (Number(h.volume) || 0), 0) /
+        selectedDays.length;
 
       if (avgVolume === 0) return null;
 
@@ -187,6 +202,31 @@ export class TrendAnalysisService {
     } catch (error) {
       return null;
     }
+  }
+
+  /**
+   * 批量获取指数的历史数据（用于量比计算）
+   * 【性能优化】一次性获取所有需要的历史数据，避免循环中多次查询
+   */
+  private async batchGetHistoryData(
+    indexId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<Map<string, IndexHistory>> {
+    const histories = await this.historyRepository.find({
+      where: {
+        indexId,
+        tradeDate: Between(startDate, endDate),
+      },
+      order: { tradeDate: 'ASC' },
+    });
+
+    const historyMap = new Map<string, IndexHistory>();
+    for (const history of histories) {
+      historyMap.set(this.formatDate(history.tradeDate), history);
+    }
+
+    return historyMap;
   }
 
   /**
@@ -573,15 +613,34 @@ export class TrendAnalysisService {
     }
 
     // 2. 计算每个指数的趋势数据
+    // 【性能优化】批量获取历史数据用于量比计算，避免循环中多次查询数据库
     const allTrendResults = new Map<string, TrendAnalysisResult[]>();
 
     for (const index of indicesToCalculate) {
       const maData = allMADatas.get(index.id);
       if (maData) {
+        // 确定该指数的日期范围
+        const firstMA = maData[0];
+        const lastMA = maData[maData.length - 1];
+        const maStartDate = new Date(firstMA.tradeDate);
+        const maEndDate = new Date(lastMA.tradeDate);
+        
+        // 扩展日期范围以获取足够的历史数据用于量比计算（前5个交易日）
+        const historyStartDate = new Date(maStartDate);
+        historyStartDate.setDate(historyStartDate.getDate() - 10);
+        
+        // 批量获取该指数的历史数据
+        const historyDataMap = await this.batchGetHistoryData(
+          index.id,
+          historyStartDate,
+          maEndDate,
+        );
+
         const results = await this.calculateTrendForIndex(
           index,
           maData,
           latestMAs,
+          historyDataMap,
         );
         allTrendResults.set(index.id, results);
       }
@@ -704,9 +763,25 @@ export class TrendAnalysisService {
   }
 
   /**
+   * 获取指数的首个交易日期（从MA数据中查询）
+   * @param indexId 指数ID
+   * @returns 首个交易日期，如果没有则返回null
+   */
+  private async getIndexFirstTradeDate(indexId: string): Promise<Date | null> {
+    const firstRecord = await this.maRepository.findOne({
+      where: { indexId },
+      order: { tradeDate: 'ASC' },
+    });
+    return firstRecord ? firstRecord.tradeDate : null;
+  }
+
+  /**
    * 获取最新日期的所有指数趋势分析（用于排名展示）
    * 如果某个指数在最新日期没有数据，则使用其上一个交易日的数据补全
    * 确保排名列表始终包含所有活跃指数的全量数据
+   * 
+   * 【临界点规则】指数只有在有交易数据的那天及以后才参与排名
+   * 例如：北证50在2023年1月1日才有数据，那么在2022年12月31日的排名中不应包含北证50
    */
   async getLatestTrendRanking(): Promise<
     (TrendAnalysis & {
@@ -754,6 +829,7 @@ export class TrendAnalysisService {
     const prevDataMap = new Map(prevData.map((d) => [d.indexId, d]));
 
     // 7. 为每个指数选择数据：优先用基准日期的，没有则用上一个交易日的
+    // 【临界点规则】只包含在基准日期已经有数据的指数
     const result: (TrendAnalysis & {
       isTodayData: boolean;
       actualDataDate: Date;
@@ -763,6 +839,19 @@ export class TrendAnalysisService {
     for (const index of activeIndices) {
       const latestRecord = latestDataMap.get(index.id);
       const prevRecord = prevDataMap.get(index.id);
+
+      // 如果该指数在趋势数据中没有任何记录，跳过
+      if (!latestRecord && !prevRecord) {
+        continue;
+      }
+
+      // 【临界点规则】检查指数在基准日期是否已经有数据
+      // 如果无法获取首个交易日（返回null），但趋势数据存在，则保留该数据
+      const firstTradeDate = await this.getIndexFirstTradeDate(index.id);
+      if (firstTradeDate && firstTradeDate > latestDate) {
+        // 该指数在基准日期还没有数据（首个交易日明确晚于基准日期），跳过
+        continue;
+      }
 
       // 获取昨天的偏离率（用于前端判断正负转换）
       const prevDeviationRate = prevRecord ? prevRecord.deviationRate : null;
@@ -832,6 +921,9 @@ export class TrendAnalysisService {
    * 获取指定日期的所有指数趋势分析排名
    * @param date 指定日期（格式：YYYY-MM-DD）
    * @returns 包含数据补全信息的趋势分析数组
+   * 
+   * 【临界点规则】指数只有在有交易数据的那天及以后才参与排名
+   * 例如：北证50在2023年1月1日才有数据，那么在2022年12月31日的排名中不应包含北证50
    */
   async getTrendRankingByDate(
     date: string,
@@ -842,10 +934,9 @@ export class TrendAnalysisService {
       prevDeviationRate: number | null;
     })[]
   > {
-    const tradeDate = new Date(date);
-
     // 验证日期格式
-    if (isNaN(tradeDate.getTime())) {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date)) {
       throw new Error('无效的日期格式，请使用 YYYY-MM-DD 格式');
     }
 
@@ -868,7 +959,9 @@ export class TrendAnalysisService {
     }
 
     // 查询历史日期，需要获取前一天的偏离率来判断转换
-    const prevDate = await this.getPreviousTradingDate(tradeDate);
+    // 使用字符串日期创建 Date 对象用于获取前一个交易日
+    const tradeDateObj = new Date(date + 'T00:00:00');
+    const prevDate = await this.getPreviousTradingDate(tradeDateObj);
     const prevData = prevDate
       ? await this.trendRepository.find({
           where: { tradeDate: prevDate },
@@ -878,11 +971,27 @@ export class TrendAnalysisService {
     const prevDataMap = new Map(prevData.map((d) => [d.indexId, d]));
 
     // 查询历史日期的数据
+    // 【修复】使用 Raw 查询避免时区问题，直接使用字符串比较
     const data = await this.trendRepository.find({
-      where: { tradeDate },
+      where: {
+        tradeDate: Raw((alias) => `DATE(${alias}) = :date`, { date }),
+      },
       relations: { index: true },
       order: { rank: 'ASC' },
     });
+
+    // 【临界点规则】过滤掉在查询日期还没有数据的指数
+    // 只保留首个交易日 <= 查询日期的指数
+    // 【修复】如果无法获取首个交易日（返回null），但趋势数据存在，则保留该数据
+    const filteredData: TrendAnalysis[] = [];
+    const tradeDateForCompare = new Date(date + 'T00:00:00');
+    for (const item of data) {
+      const firstTradeDate = await this.getIndexFirstTradeDate(item.indexId);
+      // 保留条件：首个交易日存在且 <= 查询日期，或者无法获取首个交易日（兼容历史数据）
+      if (!firstTradeDate || firstTradeDate <= tradeDateForCompare) {
+        filteredData.push(item);
+      }
+    }
 
     // 构建前一个交易日排名的映射（用于重新计算排名变化）
     const prevRankMap = new Map<string, number>();
@@ -893,7 +1002,7 @@ export class TrendAnalysisService {
     // 历史日期的数据全部标记为 isTodayData: true（因为是历史数据，不需要补全）
     // 但保留 prevDeviationRate 用于判断偏离率转换
     // 同时重新计算rankChange以确保准确性
-    return data.map((item) => {
+    return filteredData.map((item) => {
       const prevRank = prevRankMap.get(item.indexId);
       const rankChange = prevRank !== undefined ? prevRank - item.rank : 0;
       return {
@@ -1048,12 +1157,30 @@ export class TrendAnalysisService {
           order: { tradeDate: 'DESC' },
         });
 
+        // 【性能优化】批量获取历史数据用于量比计算
+        const firstMA = maData[0];
+        const lastMA = maData[maData.length - 1];
+        const maStartDate = new Date(firstMA.tradeDate);
+        const maEndDate = new Date(lastMA.tradeDate);
+        
+        // 扩展日期范围以获取足够的历史数据用于量比计算（前5个交易日）
+        const historyStartDate = new Date(maStartDate);
+        historyStartDate.setDate(historyStartDate.getDate() - 10);
+        
+        // 批量获取该指数的历史数据
+        const historyDataMap = await this.batchGetHistoryData(
+          index.id,
+          historyStartDate,
+          maEndDate,
+        );
+
         const results = await this.calculateTrendForIndexWithHistory(
           index,
           maData,
           latestMAs,
           prevTrend,
           startDate,
+          historyDataMap,
         );
         allTrendResults.set(index.id, results);
       }
@@ -1151,6 +1278,7 @@ export class TrendAnalysisService {
    * @param allIndicesMAData 所有指数的最新MA数据（用于排名）
    * @param prevTrendRecord 最新的历史趋势记录（用于继承状态）
    * @param actualStartDate 实际开始日期（用于过滤结果）
+   * @param historyDataMap 历史数据Map（用于量比计算）
    */
   private async calculateTrendForIndexWithHistory(
     index: Index,
@@ -1158,6 +1286,7 @@ export class TrendAnalysisService {
     allIndicesMAData: Map<string, MovingAverage>,
     prevTrendRecord: TrendAnalysis | null,
     actualStartDate: Date,
+    historyDataMap?: Map<string, IndexHistory>,
   ): Promise<TrendAnalysisResult[]> {
     if (maData.length === 0) {
       return [];
@@ -1298,7 +1427,11 @@ export class TrendAnalysisService {
       }
 
       // 获取量比（如果有历史数据）
-      const volumeRatio = await this.calculateVolumeRatio(index.id, tradeDate);
+      // 【性能优化】使用传入的historyDataMap，避免循环中查询数据库
+      let volumeRatio: number | null = null;
+      if (historyDataMap) {
+        volumeRatio = await this.calculateVolumeRatio(index.id, tradeDate, historyDataMap);
+      }
 
       results.push({
         indexId: index.id,
@@ -1679,11 +1812,29 @@ export class TrendAnalysisService {
       return [];
     }
 
+    // 【性能优化】批量获取历史数据用于量比计算
+    const firstMA = maData[0];
+    const lastMA = maData[maData.length - 1];
+    const maStartDate = new Date(firstMA.tradeDate);
+    const maEndDate = new Date(lastMA.tradeDate);
+    
+    // 扩展日期范围以获取足够的历史数据用于量比计算（前5个交易日）
+    const historyStartDate = new Date(maStartDate);
+    historyStartDate.setDate(historyStartDate.getDate() - 10);
+    
+    // 批量获取该指数的历史数据
+    const historyDataMap = await this.batchGetHistoryData(
+      index.id,
+      historyStartDate,
+      maEndDate,
+    );
+
     // 计算趋势数据
     const results = await this.calculateTrendForIndexIncremental(
       index,
       maData,
       latestTrendRecord,
+      historyDataMap,
     );
 
     if (results.length === 0) {
@@ -1707,11 +1858,13 @@ export class TrendAnalysisService {
    * @param index 指数信息
    * @param maData 该指数的MA数据（按日期升序）
    * @param latestTrendRecord 最新的趋势分析记录（用于继承状态）
+   * @param historyDataMap 历史数据Map（用于量比计算）
    */
   private async calculateTrendForIndexIncremental(
     index: Index,
     maData: MovingAverage[],
     latestTrendRecord: TrendAnalysis | null,
+    historyDataMap?: Map<string, IndexHistory>,
   ): Promise<TrendAnalysisResult[]> {
     if (maData.length === 0) {
       return [];
@@ -1814,7 +1967,11 @@ export class TrendAnalysisService {
       }
 
       // 获取量比（如果有历史数据）
-      const volumeRatio = await this.calculateVolumeRatio(index.id, tradeDate);
+      // 【性能优化】使用传入的historyDataMap，避免循环中查询数据库
+      let volumeRatio: number | null = null;
+      if (historyDataMap) {
+        volumeRatio = await this.calculateVolumeRatio(index.id, tradeDate, historyDataMap);
+      }
 
       results.push({
         indexId: index.id,
