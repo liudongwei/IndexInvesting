@@ -700,8 +700,8 @@ export class IndexSyncService {
         historyData,
       );
 
-      // 更新最后同步日期
-      const lastTradeDate = new Date(data[data.length - 1].date);
+      // 更新最后同步日期（使用实际保存的数据的最后日期）
+      const lastTradeDate = new Date(newData[newData.length - 1].date);
       await this.indicesService.updateLastSyncDate(
         index.id,
         lastTradeDate,
@@ -974,32 +974,17 @@ export class IndexSyncService {
 
   /**
    * 获取贵金属数据应该过滤的日期
-   * 如果在结算休市后不久获取数据，需要过滤掉当天的数据（因为数据不完整）
+   * 贵金属是23小时连续交易（每天1小时结算休市），当天数据始终不完整
+   * 无论什么时间获取数据，都应该过滤掉当天的数据，只保存到前一交易日
    * @returns 需要过滤掉的日期字符串 (YYYY-MM-DD)，如果没有则返回null
    */
   private getPreciousMetalDateToFilter(): string | null {
     const now = new Date();
-    const hour = now.getHours();
-    const isDST = this.isDaylightSavingTime(now);
 
-    // 夏令时：06:05左右获取数据时，当天的数据还不完整（刚开盘），需要过滤
-    // 冬令时：07:05左右获取数据时，当天的数据还不完整（刚开盘），需要过滤
-    let shouldFilterToday = false;
-
-    if (isDST) {
-      // 夏令时：06:00开盘，06:05获取数据时当天数据不完整
-      shouldFilterToday = hour === 6;
-    } else {
-      // 冬令时：07:00开盘，07:05获取数据时当天数据不完整
-      shouldFilterToday = hour === 7;
-    }
-
-    if (shouldFilterToday) {
-      // 返回今天的日期，这条数据应该被过滤
-      return now.toISOString().split('T')[0];
-    }
-
-    return null;
+    // 贵金属23小时连续交易，当天数据始终还在交易中，不完整
+    // 应该等到明天再获取今天的完整数据
+    // 所以无论何时获取数据，都过滤掉当天的数据
+    return now.toISOString().split('T')[0];
   }
 
   /**

@@ -1,6 +1,6 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, Between, Raw } from 'typeorm';
+import { Repository, LessThan, LessThanOrEqual, Between, Raw } from 'typeorm';
 import { TrendAnalysis } from './entities/trend-analysis.entity';
 import { MovingAverage } from '../moving-averages/entities/moving-average.entity';
 import { IndexHistory } from '../indices/entities/index-history.entity';
@@ -316,6 +316,28 @@ export class TrendAnalysisService {
       .getRawMany();
 
     maDates.forEach((d) => allDates.add(this.formatDate(d.date)));
+    
+    this.logger.debug(
+      `[fillHolidayData] 从MA数据获取的日期: ${Array.from(allDates).sort().join(', ')}`,
+    );
+
+    // 【修复】如果MA数据中没有日期，但传入了有效的日期范围，生成工作日日期列表
+    if (allDates.size === 0) {
+      // 生成从 startDate 到 endDate 的所有工作日
+      const currentDate = new Date(startDate);
+      const end = new Date(endDate);
+      while (currentDate <= end) {
+        const dayOfWeek = currentDate.getDay();
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+          // 不是周末
+          allDates.add(this.formatDate(currentDate));
+        }
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      this.logger.debug(
+        `[fillHolidayData] 生成的工作日日期: ${Array.from(allDates).sort().join(', ')}`,
+      );
+    }
 
     if (allDates.size === 0) {
       return 0;
@@ -324,12 +346,16 @@ export class TrendAnalysisService {
     this.logger.log(
       `开始填充节假日数据，日期范围: ${this.formatDate(startDate)} 至 ${this.formatDate(endDate)}，共 ${allDates.size} 个日期`,
     );
+    this.logger.debug(`日期列表: ${Array.from(allDates).join(', ')}`);
 
     // 按日期排序
     const sortedDates = Array.from(allDates).sort();
+    this.logger.debug(`排序后的日期列表: ${sortedDates.join(', ')}`);
 
     // 为每个指数填充缺失的日期数据
     for (const index of indices) {
+      this.logger.debug(`[${index.name}] 开始检查缺失数据...`);
+
       // 获取该指数在日期范围内已有的趋势数据
       const existingData = await this.trendRepository.find({
         where: {
@@ -342,15 +368,23 @@ export class TrendAnalysisService {
       const existingDates = new Set(
         existingData.map((d) => this.formatDate(d.tradeDate)),
       );
+      this.logger.debug(
+        `[${index.name}] 已有数据的日期: ${Array.from(existingDates).join(', ')}`,
+      );
 
-      // 获取该指数在startDate之前的最新趋势数据（用于填充第一个缺失日期）
+      // 获取该指数在startDate及之前的最新趋势数据（用于填充第一个缺失日期）
+      // 【修复】使用 LessThanOrEqual 包含 startDate 当天，确保能获取到 startDate 的数据
       let lastTrendData = await this.trendRepository.findOne({
         where: {
           indexId: index.id,
-          tradeDate: LessThan(startDate),
+          tradeDate: LessThanOrEqual(startDate),
         },
         order: { tradeDate: 'DESC' },
       });
+
+      this.logger.debug(
+        `[${index.name}] lastTrendData: ${lastTrendData ? this.formatDate(lastTrendData.tradeDate) : 'null'}`,
+      );
 
       // 如果没有历史数据，使用已有的第一条数据作为基准
       if (!lastTrendData && existingData.length > 0) {
@@ -362,9 +396,18 @@ export class TrendAnalysisService {
         continue;
       }
 
+      // 获取该指数的首个交易日（从MA数据中查询）
+      const firstTradeDate = await this.getIndexFirstTradeDate(index.id);
+      const firstTradeDateStr = firstTradeDate
+        ? this.formatDate(firstTradeDate)
+        : null;
+
       // 检查每个日期，填充缺失的数据
       for (const dateStr of sortedDates) {
+        this.logger.debug(`[${index.name}] 检查日期 ${dateStr}...`);
+
         if (existingDates.has(dateStr)) {
+          this.logger.debug(`[${index.name}] 日期 ${dateStr} 已有数据，跳过`);
           // 该日期已有数据，更新lastTrendData
           const currentData = existingData.find(
             (d) => this.formatDate(d.tradeDate) === dateStr,
@@ -377,6 +420,17 @@ export class TrendAnalysisService {
 
         // 确保 lastTrendData 不为 null
         if (!lastTrendData) {
+          this.logger.debug(
+            `[${index.name}] 日期 ${dateStr} 没有 lastTrendData，跳过`,
+          );
+          continue;
+        }
+
+        // 【临界点规则】跳过早于首个交易日的日期
+        if (firstTradeDateStr && dateStr < firstTradeDateStr) {
+          this.logger.debug(
+            `[${index.name}] 跳过 ${dateStr} 的填充，早于首个交易日 ${firstTradeDateStr}`,
+          );
           continue;
         }
 
@@ -384,6 +438,7 @@ export class TrendAnalysisService {
         const dateObj = new Date(dateStr);
         const dayOfWeek = dateObj.getDay();
         if (dayOfWeek === 0 || dayOfWeek === 6) {
+          this.logger.debug(`[${index.name}] 日期 ${dateStr} 是周末，跳过`);
           continue; // 周日=0，周六=6
         }
 
@@ -624,11 +679,11 @@ export class TrendAnalysisService {
         const lastMA = maData[maData.length - 1];
         const maStartDate = new Date(firstMA.tradeDate);
         const maEndDate = new Date(lastMA.tradeDate);
-        
+
         // 扩展日期范围以获取足够的历史数据用于量比计算（前5个交易日）
         const historyStartDate = new Date(maStartDate);
         historyStartDate.setDate(historyStartDate.getDate() - 10);
-        
+
         // 批量获取该指数的历史数据
         const historyDataMap = await this.batchGetHistoryData(
           index.id,
@@ -651,6 +706,9 @@ export class TrendAnalysisService {
     for (const results of allTrendResults.values()) {
       results.forEach((r) => allDates.add(this.formatDate(r.tradeDate)));
     }
+    this.logger.log(
+      `[performFullAnalysis] 所有日期: ${Array.from(allDates).sort().join(', ')}`,
+    );
 
     // 4. 对每个日期计算排名和排序变化
     const finalResults: TrendAnalysisResult[] = [];
@@ -710,12 +768,26 @@ export class TrendAnalysisService {
     }
 
     // 7. 填充节假日数据（为休市的指数复制上一交易日数据）
+    // 【修复】使用 allDates 中的最大日期作为 endDate，确保所有有数据的日期都被填充
     let filledCount = 0;
-    if (minDate && maxDate) {
+    const sortedAllDates = Array.from(allDates).sort();
+    this.logger.log(
+      `[performFullAnalysis] sortedAllDates: ${sortedAllDates.join(', ')}`,
+    );
+    this.logger.log(
+      `[performFullAnalysis] minDate: ${minDate ? this.formatDate(minDate) : 'null'}, maxDate: ${maxDate ? this.formatDate(maxDate) : 'null'}`,
+    );
+    if (sortedAllDates.length > 0) {
+      const fillStartDate = minDate || new Date(sortedAllDates[0]);
+      // 使用 allDates 的最大日期作为 endDate，确保包含所有有数据的日期
+      const fillEndDate = new Date(sortedAllDates[sortedAllDates.length - 1]);
+      this.logger.log(
+        `[performFullAnalysis] 调用 fillHolidayData: ${this.formatDate(fillStartDate)} 至 ${this.formatDate(fillEndDate)}`,
+      );
       filledCount = await this.fillHolidayData(
         indicesToCalculate,
-        minDate,
-        maxDate,
+        fillStartDate,
+        fillEndDate,
       );
     }
 
@@ -838,12 +910,6 @@ export class TrendAnalysisService {
 
     for (const index of activeIndices) {
       const latestRecord = latestDataMap.get(index.id);
-      const prevRecord = prevDataMap.get(index.id);
-
-      // 如果该指数在趋势数据中没有任何记录，跳过
-      if (!latestRecord && !prevRecord) {
-        continue;
-      }
 
       // 【临界点规则】检查指数在基准日期是否已经有数据
       // 如果无法获取首个交易日（返回null），但趋势数据存在，则保留该数据
@@ -853,29 +919,43 @@ export class TrendAnalysisService {
         continue;
       }
 
-      // 获取昨天的偏离率（用于前端判断正负转换）
-      const prevDeviationRate = prevRecord ? prevRecord.deviationRate : null;
-
       if (latestRecord) {
         // 基准日期有数据，使用基准日期的
+        // 获取该指数前一天的偏离率
+        const prevRecordForIndex = await this.trendRepository.findOne({
+          where: {
+            indexId: index.id,
+            tradeDate: LessThan(latestDate),
+          },
+          order: { tradeDate: 'DESC' },
+        });
         result.push({
           ...latestRecord,
           isTodayData: true,
           actualDataDate: latestRecord.tradeDate,
-          prevDeviationRate,
+          prevDeviationRate: prevRecordForIndex?.deviationRate || null,
         });
-      } else if (prevRecord) {
-        // 基准日期没有，使用上一个交易日的，并标记
-        // 将 tradeDate 改为基准日期，但保留 actualDataDate 记录实际数据日期
-        result.push({
-          ...prevRecord,
-          tradeDate: latestDate, // 统一显示为基准日期
-          isTodayData: false,
-          actualDataDate: prevRecord.tradeDate, // 记录实际数据日期
-          prevDeviationRate,
+      } else {
+        // 基准日期没有数据，查询该指数最近的一条数据来补全
+        const prevRecordForIndex = await this.trendRepository.findOne({
+          where: {
+            indexId: index.id,
+            tradeDate: LessThan(latestDate),
+          },
+          order: { tradeDate: 'DESC' },
         });
+
+        if (prevRecordForIndex) {
+          // 使用该指数最近的数据补全，并标记
+          result.push({
+            ...prevRecordForIndex,
+            tradeDate: latestDate, // 统一显示为基准日期
+            isTodayData: false,
+            actualDataDate: prevRecordForIndex.tradeDate, // 记录实际数据日期
+            prevDeviationRate: null, // 补全数据没有前一天的数据
+          });
+        }
       }
-      // 如果都没有，说明是新指数或数据缺失，跳过
     }
 
     // 8. 按偏离率倒序排序（从大到小，10 排在 5 前面）
@@ -971,26 +1051,47 @@ export class TrendAnalysisService {
     const prevDataMap = new Map(prevData.map((d) => [d.indexId, d]));
 
     // 查询历史日期的数据
-    // 【修复】使用 Raw 查询避免时区问题，直接使用字符串比较
+    // 使用 Between 查询指定日期范围，避免时区问题
+    const startOfDay = new Date(date + 'T00:00:00');
+    const endOfDay = new Date(date + 'T23:59:59');
     const data = await this.trendRepository.find({
       where: {
-        tradeDate: Raw((alias) => `DATE(${alias}) = :date`, { date }),
+        tradeDate: Between(startOfDay, endOfDay),
       },
       relations: { index: true },
       order: { rank: 'ASC' },
     });
 
+    this.logger.debug(`[${date}] 查询到 ${data.length} 条趋势数据`);
+
     // 【临界点规则】过滤掉在查询日期还没有数据的指数
     // 只保留首个交易日 <= 查询日期的指数
     // 【修复】如果无法获取首个交易日（返回null），但趋势数据存在，则保留该数据
     const filteredData: TrendAnalysis[] = [];
-    const tradeDateForCompare = new Date(date + 'T00:00:00');
     for (const item of data) {
       const firstTradeDate = await this.getIndexFirstTradeDate(item.indexId);
+      // 使用字符串比较避免时区问题
+      const firstTradeDateStr = firstTradeDate
+        ? this.formatDate(firstTradeDate)
+        : null;
       // 保留条件：首个交易日存在且 <= 查询日期，或者无法获取首个交易日（兼容历史数据）
-      if (!firstTradeDate || firstTradeDate <= tradeDateForCompare) {
+      const shouldKeep = !firstTradeDateStr || firstTradeDateStr <= date;
+      this.logger.debug(
+        `[${date}] 指数 ${item.indexId}: 首个交易日=${firstTradeDateStr}, 查询日期=${date}, 保留=${shouldKeep}`,
+      );
+      if (shouldKeep) {
         filteredData.push(item);
+      } else {
+        this.logger.debug(
+          `[${date}] 过滤掉 ${item.indexId} 的数据，首个交易日 ${firstTradeDateStr} > 查询日期 ${date} (字符串比较: ${firstTradeDateStr} <= ${date} = ${firstTradeDateStr <= date})`,
+        );
       }
+    }
+
+    if (filteredData.length === 0 && data.length > 0) {
+      this.logger.warn(
+        `[${date}] 所有数据都被临界点规则过滤，原始数据 ${data.length} 条，过滤后 0 条`,
+      );
     }
 
     // 构建前一个交易日排名的映射（用于重新计算排名变化）
@@ -1613,12 +1714,17 @@ export class TrendAnalysisService {
     }
 
     // 第五步：填充节假日数据（为休市的指数复制上一交易日数据）
+    // 【修复】使用 allDates 中的最大日期作为 endDate，确保所有有数据的日期都被填充
     let filledCount = 0;
-    if (minDate && maxDate) {
+    const sortedAllDates = Array.from(allDates).sort();
+    if (sortedAllDates.length > 0) {
+      const fillStartDate = minDate || new Date(sortedAllDates[0]);
+      // 使用 allDates 的最大日期作为 endDate，确保包含所有有数据的日期
+      const fillEndDate = new Date(sortedAllDates[sortedAllDates.length - 1]);
       filledCount = await this.fillHolidayData(
         indicesToCalculate,
-        minDate,
-        maxDate,
+        fillStartDate,
+        fillEndDate,
       );
     }
 
