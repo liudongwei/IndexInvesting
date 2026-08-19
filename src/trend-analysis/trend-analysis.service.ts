@@ -314,12 +314,17 @@ export class TrendAnalysisService {
         endDate,
       })
       .getRawMany();
+    
+    // 【调试】保存完整的 maDates 原始数据
+    // this.logger.debug(
+    //   `[fillHolidayData] 原始MA日期数据: ${JSON.stringify(maDates)}`,
+    // );
 
     maDates.forEach((d) => allDates.add(this.formatDate(d.date)));
     
-    this.logger.debug(
-      `[fillHolidayData] 从MA数据获取的日期: ${Array.from(allDates).sort().join(', ')}`,
-    );
+    // this.logger.debug(
+    //   `[fillHolidayData] 从MA数据获取的日期: ${Array.from(allDates).sort().join(', ')}`,
+    // );
 
     // 【修复】如果MA数据中没有日期，但传入了有效的日期范围，生成工作日日期列表
     if (allDates.size === 0) {
@@ -706,9 +711,9 @@ export class TrendAnalysisService {
     for (const results of allTrendResults.values()) {
       results.forEach((r) => allDates.add(this.formatDate(r.tradeDate)));
     }
-    this.logger.log(
-      `[performFullAnalysis] 所有日期: ${Array.from(allDates).sort().join(', ')}`,
-    );
+    // this.logger.log(
+    //   `[performFullAnalysis] 所有日期: ${Array.from(allDates).sort().join(', ')}`,
+    // );
 
     // 4. 对每个日期计算排名和排序变化
     const finalResults: TrendAnalysisResult[] = [];
@@ -771,19 +776,19 @@ export class TrendAnalysisService {
     // 【修复】使用 allDates 中的最大日期作为 endDate，确保所有有数据的日期都被填充
     let filledCount = 0;
     const sortedAllDates = Array.from(allDates).sort();
-    this.logger.log(
-      `[performFullAnalysis] sortedAllDates: ${sortedAllDates.join(', ')}`,
-    );
-    this.logger.log(
-      `[performFullAnalysis] minDate: ${minDate ? this.formatDate(minDate) : 'null'}, maxDate: ${maxDate ? this.formatDate(maxDate) : 'null'}`,
-    );
+    // this.logger.log(
+    //   `[performFullAnalysis] sortedAllDates: ${sortedAllDates.join(', ')}`,
+    // );
+    // this.logger.log(
+    //   `[performFullAnalysis] minDate: ${minDate ? this.formatDate(minDate) : 'null'}, maxDate: ${maxDate ? this.formatDate(maxDate) : 'null'}`,
+    // );
     if (sortedAllDates.length > 0) {
       const fillStartDate = minDate || new Date(sortedAllDates[0]);
       // 使用 allDates 的最大日期作为 endDate，确保包含所有有数据的日期
       const fillEndDate = new Date(sortedAllDates[sortedAllDates.length - 1]);
-      this.logger.log(
-        `[performFullAnalysis] 调用 fillHolidayData: ${this.formatDate(fillStartDate)} 至 ${this.formatDate(fillEndDate)}`,
-      );
+      // this.logger.log(
+      //   `[performFullAnalysis] 调用 fillHolidayData: ${this.formatDate(fillStartDate)} 至 ${this.formatDate(fillEndDate)}`,
+      // );
       filledCount = await this.fillHolidayData(
         indicesToCalculate,
         fillStartDate,
@@ -1062,7 +1067,7 @@ export class TrendAnalysisService {
       order: { rank: 'ASC' },
     });
 
-    this.logger.debug(`[${date}] 查询到 ${data.length} 条趋势数据`);
+    // this.logger.debug(`[${date}] 查询到 ${data.length} 条趋势数据`);
 
     // 【临界点规则】过滤掉在查询日期还没有数据的指数
     // 只保留首个交易日 <= 查询日期的指数
@@ -1076,9 +1081,9 @@ export class TrendAnalysisService {
         : null;
       // 保留条件：首个交易日存在且 <= 查询日期，或者无法获取首个交易日（兼容历史数据）
       const shouldKeep = !firstTradeDateStr || firstTradeDateStr <= date;
-      this.logger.debug(
-        `[${date}] 指数 ${item.indexId}: 首个交易日=${firstTradeDateStr}, 查询日期=${date}, 保留=${shouldKeep}`,
-      );
+      // this.logger.debug(
+      //   `[${date}] 指数 ${item.indexId}: 首个交易日=${firstTradeDateStr}, 查询日期=${date}, 保留=${shouldKeep}`,
+      // );
       if (shouldKeep) {
         filteredData.push(item);
       } else {
@@ -1118,10 +1123,15 @@ export class TrendAnalysisService {
 
   /**
    * 格式化日期为字符串（兼容Date和字符串类型）
+   * 【修复】使用本地时间格式化，避免时区偏移导致日期减一天
    */
   private formatDate(date: Date | string): string {
     if (date instanceof Date) {
-      return date.toISOString().split('T')[0];
+      // 使用本地时间获取年月日，避免 UTC 转换导致日期偏移
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     }
     const dateStr = String(date);
     if (dateStr.includes('T')) {

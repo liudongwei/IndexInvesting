@@ -557,7 +557,7 @@ export class EastmoneyDataService {
           headers: this.getEastmoneyHeaders(),
         }),
       );
-      console.log(response.data);
+      // console.log(response.data);
       const json = response.data;
 
       // 检查返回数据
