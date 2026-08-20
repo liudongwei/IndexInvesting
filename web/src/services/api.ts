@@ -1,4 +1,6 @@
 import type { TrendRankingResponse, TrendRankingByDateResponse, TrendRankingItem } from '../types/trend';
+import type { IndexItem, IndexFormData, IndexSyncResult } from '../types/index';
+import type { IndexHistoryItem, IndexHistoryResponse } from '../types/history';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 
@@ -149,6 +151,98 @@ export async function getIndexTrendHistory(
   const response = await fetch(
     `${API_BASE_URL}/trend-analysis/${encodeURIComponent(indexId)}?limit=${limit}&offset=${offset}`,
   );
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 获取所有指数列表
+ */
+export async function getIndices(): Promise<IndexItem[]> {
+  const response = await fetch(`${API_BASE_URL}/indices`);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  const data = await response.json();
+  // 如果返回的是数组直接返回，如果是包装格式则取 data 字段
+  return Array.isArray(data) ? data : data.data || [];
+}
+
+/**
+ * 创建新指数
+ */
+export async function createIndex(formData: IndexFormData): Promise<IndexItem> {
+  const response = await fetch(`${API_BASE_URL}/indices`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(formData),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `创建失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 更新指数信息
+ */
+export async function updateIndex(id: string, formData: IndexFormData): Promise<IndexItem> {
+  const response = await fetch(`${API_BASE_URL}/indices/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(formData),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `更新失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 删除指数
+ */
+export async function deleteIndex(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/indices/${id}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `删除失败: ${response.status}`);
+  }
+}
+
+/**
+ * 同步指数数据
+ */
+export async function syncIndexData(id: string): Promise<IndexSyncResult> {
+  const response = await fetch(`${API_BASE_URL}/indices/${id}/sync`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `同步失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 获取指数历史交易数据
+ */
+export async function getIndexHistory(
+  indexId: string,
+  limit: number = 100,
+  startDate?: string,
+  endDate?: string,
+): Promise<IndexHistoryResponse> {
+  let url = `${API_BASE_URL}/indices/${encodeURIComponent(indexId)}/history?limit=${limit}`;
+  if (startDate) url += `&startDate=${startDate}`;
+  if (endDate) url += `&endDate=${endDate}`;
+
+  const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }

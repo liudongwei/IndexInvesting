@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from
 import { RankingTable } from './components/RankingTable';
 import { EastmoneyImport } from './components/EastmoneyImport';
 import { IndexDetail } from './components/IndexDetail';
+import { IndexManagement } from './components/IndexManagement';
+import { IndexHistory } from './components/IndexHistory';
 import { getLatestRanking, getRankingByDate } from './services/api';
 import type { TrendRankingItem } from './types/trend';
 
@@ -10,30 +12,48 @@ import type { TrendRankingItem } from './types/trend';
 function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   const isRanking = location.pathname === '/' || location.pathname === '/ranking';
   const isEastmoney = location.pathname === '/eastmoney-import';
- 
+  const isAdmin = location.pathname.startsWith('/admin');
+
   return (
     <nav className="bg-gray-900 text-white">
       <div className="max-w-7xl mx-auto px-4">
-        <div className="flex items-center gap-6 h-12">
-          <button
-            onClick={() => navigate('/')}
-            className={`text-sm font-medium transition-colors ${
-              isRanking ? 'text-white' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            趋势排名
-          </button>
-          <button
-            onClick={() => navigate('/eastmoney-import')}
-            className={`text-sm font-medium transition-colors ${
-              isEastmoney ? 'text-white' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            东财数据导入
-          </button>
+        <div className="flex items-center justify-between h-12">
+          <div className="flex items-center gap-6">
+            <button
+              onClick={() => navigate('/')}
+              className={`text-sm font-medium transition-colors ${
+                isRanking ? 'text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              趋势排名
+            </button>
+            <button
+              onClick={() => navigate('/eastmoney-import')}
+              className={`text-sm font-medium transition-colors ${
+                isEastmoney ? 'text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              东财数据导入
+            </button>
+          </div>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate('/admin/indices')}
+              className={`text-sm font-medium transition-colors flex items-center gap-1 ${
+                isAdmin ? 'text-white' : 'text-gray-400 hover:text-white'
+              }`}
+              title="管理后台"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              管理
+            </button>
+          </div>
         </div>
       </div>
     </nav>
@@ -191,16 +211,70 @@ function EastmoneyImportPage() {
   );
 }
 
+// 管理后台布局
+function AdminLayout() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const menuItems = [
+    { path: '/admin/indices', label: '指数管理', icon: '📊' },
+    { path: '/admin/history', label: '历史数据', icon: '📜' },
+    { path: '/admin/moving-averages', label: '均线管理', icon: '📈' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* 侧边栏 */}
+      <aside className="w-64 bg-white shadow-sm border-r border-gray-200">
+        <div className="p-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">管理后台</h2>
+          <p className="text-xs text-gray-500 mt-1">系统配置与数据管理</p>
+        </div>
+        <nav className="p-2">
+          {menuItems.map((item) => (
+            <button
+              key={item.path}
+              onClick={() => navigate(item.path)}
+              className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors mb-1 ${
+                location.pathname === item.path
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <span className="mr-2">{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </aside>
+
+      {/* 内容区域 */}
+      <div className="flex-1">
+        <Routes>
+          <Route path="indices" element={<IndexManagement />} />
+          <Route path="history" element={<IndexHistory />} />
+          <Route path="moving-averages" element={<div className="p-8 text-gray-500">均线管理功能开发中...</div>} />
+          <Route path="*" element={<Navigate to="/admin/indices" replace />} />
+        </Routes>
+      </div>
+    </div>
+  );
+}
+
 // 主应用组件
 function AppContent() {
+  const location = useLocation();
+  const isAdmin = location.pathname.startsWith('/admin');
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar />
+      {!isAdmin && <Navbar />}
       <Routes>
         <Route path="/" element={<RankingPage />} />
         <Route path="/ranking" element={<Navigate to="/" replace />} />
         <Route path="/eastmoney-import" element={<EastmoneyImportPage />} />
         <Route path="/index/:indexId" element={<IndexDetail />} />
+        <Route path="/admin/*" element={<AdminLayout />} />
       </Routes>
     </div>
   );

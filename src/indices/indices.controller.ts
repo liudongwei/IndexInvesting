@@ -146,8 +146,20 @@ export class IndicesController {
 
   @Get(':id/history')
   @ApiOperation({ summary: '获取指数历史数据' })
-  getHistory(@Param('id') id: string, @Query('limit') limit: string = '100') {
-    return this.indicesService.getHistoryByIndexId(id, parseInt(limit, 10));
+  async getHistory(@Param('id') id: string, @Query('limit') limit: string = '100') {
+    const index = await this.indicesService.findOne(id);
+    const history = await this.indicesService.getHistoryByIndexId(id, parseInt(limit, 10));
+    return {
+      success: true,
+      index: {
+        id: index.id,
+        code: index.code,
+        name: index.name,
+        officialCode: index.officialCode,
+      },
+      count: history.length,
+      data: history,
+    };
   }
 
   @Post(':id/sync')
