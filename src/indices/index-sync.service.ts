@@ -1251,7 +1251,7 @@ export class IndexSyncService {
    * 统一在07:05执行，确保冬夏令时数据都完整
    * 注意：夏令时06:05获取的数据会过滤掉当天的不完整数据
    */
-  @Cron('20 17 * * *')
+  @Cron('5 7 * * *')
   async handlePreciousMetalSync() {
     const isDST = this.isDaylightSavingTime();
     const dstStatus = isDST ? '夏令时' : '冬令时';
