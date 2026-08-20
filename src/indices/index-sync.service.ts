@@ -665,17 +665,30 @@ export class IndexSyncService {
 
       // 过滤新数据（如果是增量同步）
       let newData = data;
+      this.logger.log(
+        `[${index.name}] 原始数据条数: ${data.length}, 最后同步日期: ${latestDate ? (latestDate instanceof Date ? latestDate.toISOString().split('T')[0] : String(latestDate).split('T')[0]) : 'null'}`,
+      );
+      this.logger.debug(
+        `[${index.name}] 原始数据日期列表: ${data.map((item) => item.date).join(', ')}`,
+      );
+
       if (latestDate) {
         const latestDateStr =
           latestDate instanceof Date
             ? latestDate.toISOString().split('T')[0]
             : String(latestDate).split('T')[0];
         newData = data.filter((item) => item.date > latestDateStr);
+        this.logger.log(
+          `[${index.name}] 增量同步过滤后数据条数: ${newData.length} (>${latestDateStr})`,
+        );
       }
 
       // 贵金属特殊处理：如果在结算休市后不久获取数据，过滤掉当天的不完整数据
       if (this.isPreciousMetal(index)) {
         const dateToFilter = this.getPreciousMetalDateToFilter();
+        this.logger.log(
+          `[${index.name}] 贵金属日期过滤标记: ${dateToFilter || 'null'}`,
+        );
         if (dateToFilter) {
           const beforeFilterCount = newData.length;
           newData = newData.filter((item) => item.date !== dateToFilter);
@@ -687,6 +700,11 @@ export class IndexSyncService {
           }
         }
       }
+
+      this.logger.log(`[${index.name}] 最终新数据条数: ${newData.length}`);
+      this.logger.debug(
+        `[${index.name}] 最终新数据日期列表: ${newData.map((item) => item.date).join(', ')}`,
+      );
 
       if (newData.length === 0) {
         this.logger.log(`没有新数据需要同步`);
