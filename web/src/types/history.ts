@@ -4,14 +4,15 @@ export interface IndexHistoryItem {
   id: string;
   indexId: string;
   tradeDate: string;
-  openPrice: number;
-  highPrice: number;
-  lowPrice: number;
-  closePrice: number;
-  volume: number | null;
-  turnover: number | null;
-  changePercent: number | null;
-  changeAmount: number | null;
+  // 后端 decimal 类型可能返回字符串，需要兼容处理
+  openPrice: number | string;
+  highPrice: number | string;
+  lowPrice: number | string;
+  closePrice: number | string;
+  volume: number | string | null;
+  turnover: number | string | null;
+  changePercent: number | string | null;
+  changeAmount: number | string | null;
   dataSource?: string;
   createdAt?: string;
   updatedAt?: string;

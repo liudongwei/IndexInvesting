@@ -7,10 +7,26 @@ import { getIndexHistory, getIndices } from '../services/api';
 function MiniKLine({ data }: { data: IndexHistoryItem[] }) {
   if (data.length === 0) return null;
 
-  // 过滤有效数据（价格必须大于0）
-  const validData = data.filter(
-    (d) => d.highPrice > 0 && d.lowPrice > 0 && d.openPrice > 0 && d.closePrice > 0
-  );
+  // 过滤有效数据（价格必须大于0），并将价格转换为数字
+  const validData = data
+    .map((d) => ({
+      ...d,
+      openPrice: Number(d.openPrice),
+      highPrice: Number(d.highPrice),
+      lowPrice: Number(d.lowPrice),
+      closePrice: Number(d.closePrice),
+    }))
+    .filter(
+      (d) =>
+        !isNaN(d.highPrice) &&
+        !isNaN(d.lowPrice) &&
+        !isNaN(d.openPrice) &&
+        !isNaN(d.closePrice) &&
+        d.highPrice > 0 &&
+        d.lowPrice > 0 &&
+        d.openPrice > 0 &&
+        d.closePrice > 0,
+    );
   if (validData.length === 0) return null;
 
   // 计算价格范围
@@ -24,13 +40,17 @@ function MiniKLine({ data }: { data: IndexHistoryItem[] }) {
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-      <h3 className="text-sm font-medium text-gray-700 mb-3">价格走势（最近30个交易日）</h3>
+      <h3 className="text-sm font-medium text-gray-700 mb-3">
+        价格走势（最近30个交易日）
+      </h3>
       <div className="h-40 flex items-end gap-1">
         {displayData.map((item, index) => {
           const isUp = item.closePrice >= item.openPrice;
           const top = ((maxPrice - item.highPrice) / range) * 100;
           const height = ((item.highPrice - item.lowPrice) / range) * 100;
-          const bodyTop = ((maxPrice - Math.max(item.openPrice, item.closePrice)) / range) * 100;
+          const bodyTop =
+            ((maxPrice - Math.max(item.openPrice, item.closePrice)) / range) *
+            100;
           const bodyHeight =
             (Math.abs(item.closePrice - item.openPrice) / range) * 100 || 2;
 
@@ -153,40 +173,88 @@ export function IndexHistory() {
   };
 
   // 格式化数字
-  const formatNumber = (num: number | null, decimals: number = 2) => {
+  const formatNumber = (num: number | null | string, decimals: number = 2) => {
     if (num === null || num === undefined) return '-';
-    return num.toFixed(decimals);
+    const n = typeof num === 'string' ? parseFloat(num) : num;
+    if (isNaN(n)) return '-';
+    return n.toFixed(decimals);
   };
 
   // 格式化成交量
-  const formatVolume = (volume: number | null) => {
+  const formatVolume = (volume: number | null | string) => {
     if (volume === null || volume === undefined) return '-';
-    if (volume >= 100000000) {
-      return (volume / 100000000).toFixed(2) + '亿';
+    const v = typeof volume === 'string' ? parseFloat(volume) : volume;
+    if (isNaN(v)) return '-';
+    if (v >= 100000000) {
+      return (v / 100000000).toFixed(2) + '亿';
     }
-    if (volume >= 10000) {
-      return (volume / 10000).toFixed(2) + '万';
+    if (v >= 10000) {
+      return (v / 10000).toFixed(2) + '万';
     }
-    return volume.toString();
+    return v.toString();
   };
 
   // 计算统计数据
   const stats = useMemo(() => {
-    if (historyData.length === 0) return null;
+    // 1. 防御性编程：确保 historyData 存在且为数组
+    if (
+      !historyData ||
+      !Array.isArray(historyData) ||
+      historyData.length === 0
+    ) {
+      return null;
+    }
 
-    // 过滤有效价格数据
-    const validPrices = historyData.filter((d) => d.highPrice > 0 && d.lowPrice > 0);
-    if (validPrices.length === 0) return null;
+    let highest = -Infinity;
+    let lowest = Infinity;
+    let volumeSum = 0;
+    let validVolumeCount = 0;
+    let upDays = 0;
+    let downDays = 0;
+    let hasValidPrice = false;
 
-    const volumes = historyData.filter((d) => d.volume !== null && d.volume !== undefined).map((d) => d.volume!);
+    for (const d of historyData) {
+      // 处理涨跌幅
+      const changePercent =
+        typeof d.changePercent === 'string'
+          ? parseFloat(d.changePercent)
+          : d.changePercent;
+      const cpNum = changePercent || 0;
+      if (cpNum > 0) upDays++;
+      else if (cpNum < 0) downDays++;
+
+      // 处理成交量
+      if (d.volume !== null && d.volume !== undefined) {
+        const vol =
+          typeof d.volume === 'string' ? parseFloat(d.volume) : d.volume;
+        if (!isNaN(vol)) {
+          volumeSum += vol;
+          validVolumeCount++;
+        }
+      }
+
+      // 处理价格
+      const high =
+        typeof d.highPrice === 'string' ? parseFloat(d.highPrice) : d.highPrice;
+      const low =
+        typeof d.lowPrice === 'string' ? parseFloat(d.lowPrice) : d.lowPrice;
+
+      if (high > 0 && low > 0) {
+        hasValidPrice = true;
+        if (high > highest) highest = high;
+        if (low < lowest) lowest = low;
+      }
+    }
+
+    if (!hasValidPrice) return null;
 
     return {
-      highest: Math.max(...validPrices.map((d) => d.highPrice)),
-      lowest: Math.min(...validPrices.map((d) => d.lowPrice)),
-      avgVolume: volumes.length > 0 ? volumes.reduce((a, b) => a + b, 0) / volumes.length : 0,
+      highest,
+      lowest,
+      avgVolume: validVolumeCount > 0 ? volumeSum / validVolumeCount : 0,
       totalDays: historyData.length,
-      upDays: historyData.filter((d) => (d.changePercent || 0) > 0).length,
-      downDays: historyData.filter((d) => (d.changePercent || 0) < 0).length,
+      upDays,
+      downDays,
     };
   }, [historyData]);
 
@@ -384,7 +452,15 @@ export function IndexHistory() {
                       </tr>
                     ) : (
                       historyData.map((item) => {
-                        const isUp = (item.changePercent || 0) >= 0;
+                        const changePercentNum =
+                          typeof item.changePercent === 'string'
+                            ? parseFloat(item.changePercent)
+                            : item.changePercent || 0;
+                        const changeAmountNum =
+                          typeof item.changeAmount === 'string'
+                            ? parseFloat(item.changeAmount)
+                            : item.changeAmount || 0;
+                        const isUp = changePercentNum >= 0;
                         return (
                           <tr key={item.id} className="hover:bg-gray-50">
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
@@ -394,7 +470,11 @@ export function IndexHistory() {
                               {formatNumber(item.openPrice)}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-right">
-                              <span className={isUp ? 'text-red-600' : 'text-green-600'}>
+                              <span
+                                className={
+                                  isUp ? 'text-red-600' : 'text-green-600'
+                                }
+                              >
                                 {formatNumber(item.closePrice)}
                               </span>
                             </td>
@@ -405,8 +485,12 @@ export function IndexHistory() {
                               {formatNumber(item.lowPrice)}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-right">
-                              <span className={isUp ? 'text-red-600' : 'text-green-600'}>
-                                {item.changeAmount && item.changeAmount > 0 ? '+' : ''}
+                              <span
+                                className={
+                                  isUp ? 'text-red-600' : 'text-green-600'
+                                }
+                              >
+                                {changeAmountNum > 0 ? '+' : ''}
                                 {formatNumber(item.changeAmount)}
                               </span>
                             </td>
@@ -418,7 +502,7 @@ export function IndexHistory() {
                                     : 'bg-green-100 text-green-800'
                                 }`}
                               >
-                                {item.changePercent && item.changePercent > 0 ? '+' : ''}
+                                {changePercentNum > 0 ? '+' : ''}
                                 {formatNumber(item.changePercent)}%
                               </span>
                             </td>
