@@ -1002,7 +1002,11 @@ export class IndexSyncService {
     // 贵金属23小时连续交易，当天数据始终还在交易中，不完整
     // 应该等到明天再获取今天的完整数据
     // 所以无论何时获取数据，都过滤掉当天的数据
-    return now.toISOString().split('T')[0];
+    // 使用本地时区格式化日期，避免UTC转换导致的问题
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   /**
