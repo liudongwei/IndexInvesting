@@ -44,7 +44,7 @@ function MiniKLine({ data }: { data: IndexHistoryItem[] }) {
         价格走势（最近30个交易日）
       </h3>
       <div className="h-40 flex items-end gap-1">
-        {displayData.map((item, index) => {
+        {displayData.map((item) => {
           const isUp = item.closePrice >= item.openPrice;
           const top = ((maxPrice - item.highPrice) / range) * 100;
           const height = ((item.highPrice - item.lowPrice) / range) * 100;

@@ -9,15 +9,6 @@ import {
 } from '../services/api';
 import { IndexEditModal } from './IndexEditModal';
 
-// 表格列定义
-interface Column {
-  key: keyof IndexItem | 'actions';
-  title: string;
-  width?: string;
-  sortable?: boolean;
-  render?: (item: IndexItem) => React.ReactNode;
-}
-
 export function IndexManagement() {
   const [indices, setIndices] = useState<IndexItem[]>([]);
   const [loading, setLoading] = useState(true);

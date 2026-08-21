@@ -1,6 +1,6 @@
 import type { TrendRankingResponse, TrendRankingByDateResponse, TrendRankingItem } from '../types/trend';
 import type { IndexItem, IndexFormData, IndexSyncResult } from '../types/index';
-import type { IndexHistoryItem, IndexHistoryResponse } from '../types/history';
+import type { IndexHistoryResponse } from '../types/history';
 import type { CronConfig } from '../types/cron';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
