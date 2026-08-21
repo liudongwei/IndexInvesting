@@ -18,6 +18,6 @@ import { TrendAnalysisModule } from '../trend-analysis/trend-analysis.module';
   ],
   controllers: [MovingAveragesController],
   providers: [MovingAveragesService, MACronService],
-  exports: [MovingAveragesService],
+  exports: [MovingAveragesService, MACronService],
 })
 export class MovingAveragesModule {}

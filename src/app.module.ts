@@ -10,6 +10,7 @@ import { RolesModule } from './roles/roles.module';
 import { IndicesModule } from './indices/indices.module';
 import { MovingAveragesModule } from './moving-averages/moving-averages.module';
 import { TrendAnalysisModule } from './trend-analysis/trend-analysis.module';
+import { CronConfigModule } from './cron-config/cron-config.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { TrendAnalysisModule } from './trend-analysis/trend-analysis.module';
     IndicesModule,
     MovingAveragesModule,
     TrendAnalysisModule,
+    CronConfigModule,
   ],
   controllers: [AppController],
   providers: [AppService],

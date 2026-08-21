@@ -1,6 +1,7 @@
 import type { TrendRankingResponse, TrendRankingByDateResponse, TrendRankingItem } from '../types/trend';
 import type { IndexItem, IndexFormData, IndexSyncResult } from '../types/index';
 import type { IndexHistoryItem, IndexHistoryResponse } from '../types/history';
+import type { CronConfig } from '../types/cron';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 
@@ -243,6 +244,79 @@ export async function getIndexHistory(
   if (endDate) url += `&endDate=${endDate}`;
 
   const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 获取所有 Cron 配置
+ */
+export async function getCronConfigs(): Promise<CronConfig[]> {
+  const response = await fetch(`${API_BASE_URL}/admin/cron-configs`);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 更新 Cron 配置
+ */
+export async function updateCronConfig(
+  taskName: string,
+  data: Partial<CronConfig>,
+): Promise<CronConfig> {
+  const response = await fetch(`${API_BASE_URL}/admin/cron-configs/${taskName}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `更新失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 切换 Cron 任务启用状态
+ */
+export async function toggleCronConfig(taskName: string): Promise<CronConfig> {
+  const response = await fetch(`${API_BASE_URL}/admin/cron-configs/${taskName}/toggle`, {
+    method: 'PATCH',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `切换失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 立即执行一次 Cron 任务
+ */
+export async function runCronTaskOnce(
+  taskName: string,
+): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/admin/cron-configs/${taskName}/run`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `执行失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 获取 Cron 任务运行状态
+ */
+export async function getCronJobStatus(
+  taskName: string,
+): Promise<{ running: boolean; nextRun?: Date }> {
+  const response = await fetch(`${API_BASE_URL}/admin/cron-configs/${taskName}/status`);
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }

@@ -1139,7 +1139,6 @@ export class IndexSyncService {
    * 定时任务：A股收盘后同步（15:05）
    * A股交易时间 9:30-15:00，延迟5分钟后同步
    */
-  @Cron('5 15 * * *')
   async handleAStockSync() {
     this.logger.log('A股交易时间结束（延迟5分钟），执行数据同步...');
     try {
@@ -1157,7 +1156,6 @@ export class IndexSyncService {
    * 定时任务：港股收盘后同步（16:05）
    * 港股交易时间 9:30-16:00，延迟5分钟后同步
    */
-  @Cron('15 16 * * *')
   async handleHKStockSync() {
     this.logger.log('港股交易时间结束（延迟5分钟），执行数据同步...');
     try {
@@ -1176,7 +1174,6 @@ export class IndexSyncService {
    * 台湾交易时间 9:00-13:30，延迟5分钟后同步
    * 收盘时间早于A股，按A股时间统一处理
    */
-  @Cron('35 13 * * *')
   async handleTaiwanStockSync() {
     this.logger.log('台湾市场交易时间结束（延迟5分钟），执行数据同步...');
     try {
@@ -1195,7 +1192,6 @@ export class IndexSyncService {
    * 日本交易时间 8:00-14:30，韩国交易时间 8:00-14:30（北京时间）
    * 收盘时间早于A股，按A股时间统一处理
    */
-  @Cron('35 14 * * *')
   async handleJapanKoreaStockSync() {
     this.logger.log('日韩市场交易时间结束（延迟5分钟），执行数据同步...');
     try {
@@ -1214,7 +1210,6 @@ export class IndexSyncService {
    * 欧洲夏令时 15:30-23:30，冬令时 16:30-00:30（北京时间）
    * 统一在00:35执行，覆盖冬夏令时
    */
-  @Cron('35 0 * * *')
   async handleEuropeStockSync() {
     this.logger.log('欧洲市场交易时间结束（延迟5分钟），执行数据同步...');
     try {
@@ -1233,7 +1228,6 @@ export class IndexSyncService {
    * 美股夏令时 21:30-04:00，冬令时 22:30-05:00（北京时间）
    * 统一在05:05执行，覆盖冬夏令时
    */
-  @Cron('5 5 * * *')
   async handleUSStockSync() {
     this.logger.log('美股交易时间结束（延迟5分钟），执行数据同步...');
     try {
@@ -1255,7 +1249,6 @@ export class IndexSyncService {
    * 统一在07:05执行，确保冬夏令时数据都完整
    * 注意：夏令时06:05获取的数据会过滤掉当天的不完整数据
    */
-  @Cron('5 7 * * *')
   async handlePreciousMetalSync() {
     const isDST = this.isDaylightSavingTime();
     const dstStatus = isDST ? '夏令时' : '冬令时';
