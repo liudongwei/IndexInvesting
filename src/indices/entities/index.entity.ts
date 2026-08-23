@@ -47,6 +47,6 @@ export class Index {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @OneToMany(() => IndexHistory, history => history.index)
+  @OneToMany(() => IndexHistory, history => history.index, { cascade: true, onDelete: 'CASCADE' })
   histories: IndexHistory[];
 }

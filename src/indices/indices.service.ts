@@ -27,6 +27,51 @@ export class IndicesService {
     return Array.isArray(saved) ? saved[0] : saved;
   }
 
+  async bulkCreate(createIndexDtos: CreateIndexDto[]): Promise<{
+    total: number;
+    success: number;
+    failed: number;
+    results: { index: Index | null; error?: string; dto: CreateIndexDto }[];
+  }> {
+    const results: { index: Index | null; error?: string; dto: CreateIndexDto }[] = [];
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (const dto of createIndexDtos) {
+      try {
+        // 检查 code 是否已存在
+        const existing = await this.findByCode(dto.code);
+        if (existing) {
+          results.push({
+            index: null,
+            error: `指数代码 ${dto.code} 已存在`,
+            dto,
+          });
+          failedCount++;
+          continue;
+        }
+
+        const index = await this.create(dto);
+        results.push({ index, dto });
+        successCount++;
+      } catch (error) {
+        results.push({
+          index: null,
+          error: error.message,
+          dto,
+        });
+        failedCount++;
+      }
+    }
+
+    return {
+      total: createIndexDtos.length,
+      success: successCount,
+      failed: failedCount,
+      results,
+    };
+  }
+
   async findAll(): Promise<Index[]> {
     return this.indexRepository.find({
       order: { createdAt: 'ASC' },

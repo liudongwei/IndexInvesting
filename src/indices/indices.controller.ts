@@ -41,6 +41,28 @@ export class IndicesController {
     return this.indicesService.create(createIndexDto);
   }
 
+  @Post('bulk')
+  @ApiOperation({
+    summary: '批量创建指数',
+    description: '批量创建多个指数，如果某个指数代码已存在则跳过并记录错误',
+  })
+  async bulkCreate(@Body() createIndexDtos: CreateIndexDto[]) {
+    if (!Array.isArray(createIndexDtos) || createIndexDtos.length === 0) {
+      return {
+        success: false,
+        message: '请求体必须是指数数组且不能为空',
+      };
+    }
+
+    const result = await this.indicesService.bulkCreate(createIndexDtos);
+
+    return {
+      success: result.failed === 0,
+      message: `批量创建完成，成功: ${result.success}, 失败: ${result.failed}`,
+      data: result,
+    };
+  }
+
   @Get()
   @ApiOperation({ summary: '获取所有指数' })
   findAll() {
