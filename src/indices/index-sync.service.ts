@@ -7,6 +7,7 @@ import { MovingAveragesService } from '../moving-averages/moving-averages.servic
 import { TrendAnalysisService } from '../trend-analysis/trend-analysis.service';
 import { Index } from './entities/index.entity';
 import { IndexHistory } from './entities/index-history.entity';
+import { INDEX_TYPE } from '../common/constants/index-type.constants';
 
 @Injectable()
 export class IndexSyncService {
@@ -76,47 +77,121 @@ export class IndexSyncService {
     const years: { year: number; count: number; status: string }[] = [];
     let totalCount = 0;
 
+    // 获取数据源配置
+    const dataSource = metadata.data_source || 'tencent';
+
     this.logger.log(
-      `开始智能同步 ${index.name} (${index.code}) 数据: ${startYear} 至 ${targetEndYear} (sync_mode: ${syncMode})`,
+      `开始智能同步 ${index.name} (${index.code}) 数据: ${startYear} 至 ${targetEndYear} (sync_mode: ${syncMode}, data_source: ${dataSource})`,
     );
 
-    for (let year = startYear; year <= targetEndYear; year++) {
-      try {
-        // 获取该年数据
-        const yearData = await this.indexDataService.getTencentKlineByDateRange(
-          index.code,
-          `${year}-01-01`,
-          `${year}-12-31`,
-          1000,
-        );
+    // 根据数据源选择不同的同步策略
+    if (dataSource === 'easymoney') {
+      // 东财API策略：按年份分批获取数据
+      for (let year = startYear; year <= targetEndYear; year++) {
+        try {
+          // 计算该年份需要获取的数据条数（约250个交易日/年）
+          const limit = 300; // 留有余量
+          const endDateStr = `${year}-12-31`.replace(/-/g, '');
 
-        if (yearData.length === 0) {
-          this.logger.warn(`${year} 年无数据`);
-          years.push({ year, count: 0, status: 'no_data' });
-          continue;
+          this.logger.log(
+            `[${index.name}] ${year}年使用东财API同步，limit: ${limit}`,
+          );
+
+          const result = await this.eastmoneyDataService.getKlineFromApi(
+            index.code,
+            limit,
+            endDateStr,
+          );
+
+          if (!result.success) {
+            throw new Error(`东财API获取失败: ${result.message}`);
+          }
+
+          // 过滤该年份的数据
+          const yearData = result.data
+            .map((item) => ({
+              date: item.tradeDate.toISOString().split('T')[0],
+              open: item.openPrice,
+              high: item.highPrice,
+              low: item.lowPrice,
+              close: item.closePrice,
+              volume: item.volume,
+              amount: item.turnover,
+            }))
+            .filter((item) => {
+              const itemYear = new Date(item.date).getFullYear();
+              return itemYear === year;
+            });
+
+          if (yearData.length === 0) {
+            this.logger.warn(`${year} 年无数据`);
+            years.push({ year, count: 0, status: 'no_data' });
+            continue;
+          }
+
+          // 转换并保存数据
+          const historyData = this.convertToHistoryData(yearData, 'easymoney');
+          const savedCount = await this.indicesService.saveHistoryData(
+            index.id,
+            historyData,
+          );
+
+          years.push({ year, count: savedCount, status: 'success' });
+          totalCount += savedCount;
+
+          this.logger.log(
+            `${index.name} ${year} 年同步完成: ${savedCount} 条数据`,
+          );
+
+          // 添加延迟，避免请求过快
+          if (year < targetEndYear) {
+            await new Promise((r) => setTimeout(r, 800));
+          }
+        } catch (error) {
+          this.logger.error(`同步 ${year} 年数据失败: ${error.message}`);
+          years.push({ year, count: 0, status: `error: ${error.message}` });
         }
+      }
+    } else {
+      // 腾讯/新浪API策略：按年份范围获取数据
+      for (let year = startYear; year <= targetEndYear; year++) {
+        try {
+          // 获取该年数据
+          const yearData = await this.indexDataService.getTencentKlineByDateRange(
+            index.code,
+            `${year}-01-01`,
+            `${year}-12-31`,
+            1000,
+          );
 
-        // 转换并保存数据
-        const historyData = this.convertToHistoryData(yearData, 'tencent');
-        const savedCount = await this.indicesService.saveHistoryData(
-          index.id,
-          historyData,
-        );
+          if (yearData.length === 0) {
+            this.logger.warn(`${year} 年无数据`);
+            years.push({ year, count: 0, status: 'no_data' });
+            continue;
+          }
 
-        years.push({ year, count: savedCount, status: 'success' });
-        totalCount += savedCount;
+          // 转换并保存数据
+          const historyData = this.convertToHistoryData(yearData, 'tencent');
+          const savedCount = await this.indicesService.saveHistoryData(
+            index.id,
+            historyData,
+          );
 
-        this.logger.log(
-          `${index.name} ${year} 年同步完成: ${savedCount} 条数据`,
-        );
+          years.push({ year, count: savedCount, status: 'success' });
+          totalCount += savedCount;
 
-        // 添加延迟，避免请求过快
-        if (year < targetEndYear) {
-          await new Promise((r) => setTimeout(r, 500));
+          this.logger.log(
+            `${index.name} ${year} 年同步完成: ${savedCount} 条数据`,
+          );
+
+          // 添加延迟，避免请求过快
+          if (year < targetEndYear) {
+            await new Promise((r) => setTimeout(r, 500));
+          }
+        } catch (error) {
+          this.logger.error(`同步 ${year} 年数据失败: ${error.message}`);
+          years.push({ year, count: 0, status: `error: ${error.message}` });
         }
-      } catch (error) {
-        this.logger.error(`同步 ${year} 年数据失败: ${error.message}`);
-        years.push({ year, count: 0, status: `error: ${error.message}` });
       }
     }
 
@@ -152,6 +227,7 @@ export class IndexSyncService {
   async bulkSyncByMetadata(
     onlyActive: boolean = true,
     endYear?: number,
+    indexType?: string,
   ): Promise<{
     total: number;
     results: {
@@ -162,10 +238,27 @@ export class IndexSyncService {
       years: { year: number; count: number; status: string }[];
     }[];
   }> {
-    const indices = await this.indicesService.findAll();
-    const targetIndices = onlyActive
+    let indices = await this.indicesService.findAll();
+    let targetIndices = onlyActive
       ? indices.filter((i) => i.isActive)
       : indices;
+
+    // 如果指定了类型，按类型过滤
+    // 注意：indices 类型在数据库中存储为 'indices' 或 null/undefined
+    // sectors 类型在数据库中存储为 'sectors'
+    if (indexType) {
+      targetIndices = targetIndices.filter((i) => {
+        const metadataType = i.metadata?.type;
+        if (indexType === INDEX_TYPE.INDICES) {
+          // indices 类型包括：明确标记为 'indices' 或未设置 type 的
+          return metadataType === INDEX_TYPE.INDICES || !metadataType;
+        } else if (indexType === INDEX_TYPE.SECTORS) {
+          // sectors 类型：明确标记为 'sectors'
+          return metadataType === INDEX_TYPE.SECTORS;
+        }
+        return false;
+      });
+    }
 
     // 筛选出 sync_mode=api 的指数，并按 createdAt 正序排序（先创建的优先）
     const apiIndices = targetIndices
@@ -191,9 +284,28 @@ export class IndexSyncService {
 
     for (const index of apiIndices) {
       try {
+        // 获取该指数最后一条历史数据的交易日期
+        const latestHistory = await this.indicesService.getLatestHistoryDate(
+          index.id,
+        );
+
+        // 如果有历史数据，从最后交易日所在年份开始；否则使用 metadata.firstTradingDay 或默认值
+        let startYear: number | undefined;
+        if (latestHistory) {
+          // 确保是 Date 对象
+          const latestDate = latestHistory instanceof Date 
+            ? latestHistory 
+            : new Date(latestHistory);
+          startYear = latestDate.getFullYear();
+          const dateStr = latestDate.toISOString().split('T')[0];
+          this.logger.log(
+            `[${index.name}] 已有历史数据至 ${dateStr}，从 ${startYear} 年开始同步`,
+          );
+        }
+
         const result = await this.syncIndexDataByMetadata(
           index,
-          undefined,
+          startYear,
           endYear,
         );
         results.push({
@@ -508,6 +620,7 @@ export class IndexSyncService {
     startDate: string,
     endDate: string,
     onlyActive: boolean = true,
+    indexType?: string,
   ): Promise<{
     total: number;
     success: number;
@@ -520,10 +633,27 @@ export class IndexSyncService {
       message: string;
     }[];
   }> {
-    const indices = await this.indicesService.findAll();
-    const targetIndices = onlyActive
+    let indices = await this.indicesService.findAll();
+    let targetIndices = onlyActive
       ? indices.filter((i) => i.isActive)
       : indices;
+    
+    // 如果指定了类型，按类型过滤
+    // 注意：indices 类型在数据库中存储为 'indices' 或 null/undefined
+    // sectors 类型在数据库中存储为 'sectors'
+    if (indexType) {
+      targetIndices = targetIndices.filter((i) => {
+        const metadataType = i.metadata?.type;
+        if (indexType === INDEX_TYPE.INDICES) {
+          // indices 类型包括：明确标记为 'indices' 或未设置 type 的
+          return metadataType === INDEX_TYPE.INDICES || !metadataType;
+        } else if (indexType === INDEX_TYPE.SECTORS) {
+          // sectors 类型：明确标记为 'sectors'
+          return metadataType === INDEX_TYPE.SECTORS;
+        }
+        return false;
+      });
+    }
 
     this.logger.log(
       `开始批量重新同步，日期范围: ${startDate} 至 ${endDate}，共 ${targetIndices.length} 个指数`,
@@ -812,8 +942,12 @@ export class IndexSyncService {
     // A股：上交所、深交所，或代码以 sh/sz 开头
     // 也包括中证2000(932000)和北证50(899050)等特殊指数
     return (
+      exchange.includes('上海') ||
+      exchange.includes('深圳') ||
+      exchange.includes('北京') ||
       exchange.includes('上交所') ||
       exchange.includes('深交所') ||
+      exchange.includes('北交所') ||
       code.startsWith('sh') ||
       code.startsWith('sz') ||
       officialCode.includes('.SH') ||

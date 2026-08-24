@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, Matches } from 'class-validator';
+import { IsString, IsNotEmpty, Matches, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class RecalculateTrendDto {
@@ -23,4 +23,12 @@ export class RecalculateTrendDto {
     message: '日期格式错误，请使用 YYYY-MM-DD 格式',
   })
   endDate: string;
+
+  @ApiProperty({
+    description: '指数类型：indices（大盘指数）或 sectors（行业指数），不传或传空则处理所有',
+    example: 'indices',
+    required: false,
+  })
+  @IsOptional()
+  type?: string;
 }

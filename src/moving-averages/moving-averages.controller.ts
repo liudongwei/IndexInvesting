@@ -2,6 +2,7 @@ import { Controller, Get, Post, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { MovingAveragesService } from './moving-averages.service';
 import { IndicesService } from '../indices/indices.service';
+import { INDEX_TYPE, type IndexType } from '../common/constants/index-type.constants';
 
 @ApiTags('移动平均线(MA)计算')
 @Controller('moving-averages')
@@ -52,9 +53,28 @@ export class MovingAveragesController {
   }
 
   @Post('calculate-all')
-  @ApiOperation({ summary: '批量计算所有指数的MA数据' })
-  async calculateForAllIndices() {
-    const indices = await this.indicesService.findAll();
+  @ApiOperation({ 
+    summary: '批量计算所有指数的MA数据',
+    description: '支持按类型过滤：indices（大盘指数）或 sectors（行业指数）。不传 type 则默认处理所有指数。',
+  })
+  async calculateForAllIndices(@Query('type') type?: IndexType) {
+    let indices = await this.indicesService.findAll();
+    
+    // 如果指定了类型，按类型过滤
+    if (type) {
+      indices = indices.filter((i) => {
+        const metadataType = i.metadata?.type;
+        if (type === INDEX_TYPE.INDICES) {
+          // indices 类型包括：明确标记为 'indices' 或未设置 type 的
+          return metadataType === INDEX_TYPE.INDICES || !metadataType;
+        } else if (type === INDEX_TYPE.SECTORS) {
+          // sectors 类型：明确标记为 'sectors'
+          return metadataType === INDEX_TYPE.SECTORS;
+        }
+        return false;
+      });
+    }
+    
     const result = await this.maService.calculateMAForAllIndices(indices);
     return {
       success: true,
@@ -65,10 +85,29 @@ export class MovingAveragesController {
   @Post('recalculate-recent-all')
   @ApiOperation({
     summary: '批量重新计算所有指数的最近N个交易日MA数据',
-    description: '针对所有指数，根据历史记录重新计算最近N个交易日的移动均线，默认5个交易日。',
+    description: '针对所有指数，根据历史记录重新计算最近N个交易日的移动均线，默认5个交易日。支持按类型过滤：indices（大盘指数）或 sectors（行业指数）。不传 type 则默认处理所有指数。',
   })
-  async recalculateRecentForAllIndices(@Query('days') days: string = '5') {
-    const indices = await this.indicesService.findAll();
+  async recalculateRecentForAllIndices(
+    @Query('days') days: string = '5',
+    @Query('type') type?: IndexType,
+  ) {
+    let indices = await this.indicesService.findAll();
+    
+    // 如果指定了类型，按类型过滤
+    if (type) {
+      indices = indices.filter((i) => {
+        const metadataType = i.metadata?.type;
+        if (type === INDEX_TYPE.INDICES) {
+          // indices 类型包括：明确标记为 'indices' 或未设置 type 的
+          return metadataType === INDEX_TYPE.INDICES || !metadataType;
+        } else if (type === INDEX_TYPE.SECTORS) {
+          // sectors 类型：明确标记为 'sectors'
+          return metadataType === INDEX_TYPE.SECTORS;
+        }
+        return false;
+      });
+    }
+    
     const tradingDays = parseInt(days, 10);
 
     if (isNaN(tradingDays) || tradingDays < 1 || tradingDays > 100) {
@@ -93,8 +132,8 @@ export class MovingAveragesController {
 
   @Get('ranking/latest')
   @ApiOperation({ summary: '获取所有指数最新MA排名（按偏离率）' })
-  async getLatestRanking() {
-    const data = await this.maService.getAllLatestMAData();
+  async getLatestRanking(@Query('type') type?: IndexType) {
+    const data = await this.maService.getAllLatestMAData(type);
 
     // 按偏离率降序排列
     const sortedData = data

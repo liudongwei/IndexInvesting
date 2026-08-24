@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TrendAnalysisService } from './trend-analysis.service';
 import { IndicesService } from '../indices/indices.service';
 import { RecalculateTrendDto } from './dto/recalculate-trend.dto';
+import { INDEX_TYPE, type IndexType } from '../common/constants/index-type.constants';
 
 @ApiTags('趋势分析')
 @Controller('trend-analysis')
@@ -15,11 +16,26 @@ export class TrendAnalysisController {
   @Post('analyze-incremental')
   @ApiOperation({
     summary: '执行增量趋势分析',
-    description: '只计算最新趋势日期之后的新增数据，适用于每日定时任务场景',
+    description: '只计算最新趋势日期之后的新增数据，适用于每日定时任务场景。支持按类型过滤：indices（大盘指数）或 sectors（行业指数）。不传 type 则处理所有指数。',
   })
-  async analyzeIncremental() {
-    const indices = await this.indicesService.findAll();
-    const activeIndices = indices.filter((i) => i.isActive);
+  async analyzeIncremental(@Query('type') type?: IndexType) {
+    let indices = await this.indicesService.findAll();
+    let activeIndices = indices.filter((i) => i.isActive);
+
+    // 如果指定了类型，按类型过滤
+    if (type) {
+      activeIndices = activeIndices.filter((i) => {
+        const metadataType = i.metadata?.type;
+        if (type === INDEX_TYPE.INDICES) {
+          // indices 类型包括：明确标记为 'indices' 或未设置 type 的
+          return metadataType === INDEX_TYPE.INDICES || !metadataType;
+        } else if (type === INDEX_TYPE.SECTORS) {
+          // sectors 类型：明确标记为 'sectors'
+          return metadataType === INDEX_TYPE.SECTORS;
+        }
+        return false;
+      });
+    }
 
     const result =
       await this.trendService.performIncrementalAnalysis(activeIndices);
@@ -33,13 +49,29 @@ export class TrendAnalysisController {
   @ApiOperation({
     summary: '执行全量趋势分析',
     description:
-      '可指定年份范围进行分段计算，如startYear=1900&endYear=2000计算1900-2000年的数据',
+      '可指定年份范围进行分段计算，如startYear=1900&endYear=2000计算1900-2000年的数据。支持按类型过滤：indices（大盘指数）或 sectors（行业指数）。不传 type 则处理所有指数。',
   })
   async analyzeAll(
     @Query('startYear') startYear?: string,
     @Query('endYear') endYear?: string,
+    @Query('type') type?: IndexType,
   ) {
-    const indices = await this.indicesService.findAll();
+    let indices = await this.indicesService.findAll();
+
+    // 如果指定了类型，按类型过滤
+    if (type) {
+      indices = indices.filter((i) => {
+        const metadataType = i.metadata?.type;
+        if (type === INDEX_TYPE.INDICES) {
+          // indices 类型包括：明确标记为 'indices' 或未设置 type 的
+          return metadataType === INDEX_TYPE.INDICES || !metadataType;
+        } else if (type === INDEX_TYPE.SECTORS) {
+          // sectors 类型：明确标记为 'sectors'
+          return metadataType === INDEX_TYPE.SECTORS;
+        }
+        return false;
+      });
+    }
 
     const startYearNum = startYear ? parseInt(startYear, 10) : undefined;
     const endYearNum = endYear ? parseInt(endYear, 10) : undefined;
@@ -260,8 +292,8 @@ export class TrendAnalysisController {
 
   @Get('ranking/latest')
   @ApiOperation({ summary: '获取最新趋势排名（类似图中表格）' })
-  async getLatestRanking() {
-    const data = await this.trendService.getLatestTrendRanking();
+  async getLatestRanking(@Query('type') type?: IndexType) {
+    const data = await this.trendService.getLatestTrendRanking(type);
 
     // 获取市场状态
     const now = new Date();
@@ -374,7 +406,10 @@ export class TrendAnalysisController {
 
   @Get('ranking/by-date')
   @ApiOperation({ summary: '获取指定日期的趋势排名' })
-  async getRankingByDate(@Query('date') date: string) {
+  async getRankingByDate(
+    @Query('date') date: string,
+    @Query('type') type?: IndexType,
+  ) {
     if (!date) {
       return {
         success: false,
@@ -383,7 +418,7 @@ export class TrendAnalysisController {
     }
 
     try {
-      const data = await this.trendService.getTrendRankingByDate(date);
+      const data = await this.trendService.getTrendRankingByDate(date, type);
 
       if (data.length === 0) {
         return {
@@ -462,7 +497,7 @@ export class TrendAnalysisController {
   @ApiOperation({
     summary: '按日期范围重新计算趋势分析',
     description:
-      '删除指定日期范围内的旧数据，然后重新计算趋势分析。用于补数据后重新计算。请求体：{ startDate: "2024-01-01", endDate: "2024-12-31" }',
+      '删除指定日期范围内的旧数据，然后重新计算趋势分析。用于补数据后重新计算。请求体：{ startDate: "2024-01-01", endDate: "2024-12-31", type: "indices" }。支持按类型过滤：indices（大盘指数）或 sectors（行业指数）。不传 type 则处理所有指数。',
   })
   async recalculateTrendAnalysis(@Body() dto: RecalculateTrendDto) {
     // 验证日期参数
@@ -490,7 +525,22 @@ export class TrendAnalysisController {
       };
     }
 
-    const indices = await this.indicesService.findAll();
+    let indices = await this.indicesService.findAll();
+
+    // 如果指定了类型，按类型过滤
+    if (dto.type) {
+      indices = indices.filter((i) => {
+        const metadataType = i.metadata?.type;
+        if (dto.type === INDEX_TYPE.INDICES) {
+          // indices 类型包括：明确标记为 'indices' 或未设置 type 的
+          return metadataType === INDEX_TYPE.INDICES || !metadataType;
+        } else if (dto.type === INDEX_TYPE.SECTORS) {
+          // sectors 类型：明确标记为 'sectors'
+          return metadataType === INDEX_TYPE.SECTORS;
+        }
+        return false;
+      });
+    }
 
     const result = await this.trendService.recalculateTrendAnalysis(
       indices,

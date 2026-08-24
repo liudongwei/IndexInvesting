@@ -2,6 +2,7 @@ import type { TrendRankingResponse, TrendRankingByDateResponse, TrendRankingItem
 import type { IndexItem, IndexFormData, IndexSyncResult } from '../types/index';
 import type { IndexHistoryResponse } from '../types/history';
 import type { CronConfig } from '../types/cron';
+import { INDEX_TYPE, type IndexType } from '../types/index-type';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 
@@ -36,9 +37,12 @@ export interface IndexDetail {
 
 /**
  * 获取最新趋势排名
+ * @param type 指数类型: 'indices' | 'sectors'，不传则默认返回 indices
  */
-export async function getLatestRanking(): Promise<TrendRankingResponse> {
-  const response = await fetch(`${API_BASE_URL}/trend-analysis/ranking/latest`);
+export async function getLatestRanking(type?: IndexType): Promise<TrendRankingResponse> {
+  const indexType = type || INDEX_TYPE.INDICES;
+  const url = `${API_BASE_URL}/trend-analysis/ranking/latest?type=${indexType}`;
+  const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }
@@ -47,9 +51,13 @@ export async function getLatestRanking(): Promise<TrendRankingResponse> {
 
 /**
  * 获取指定日期的趋势排名
+ * @param date 日期
+ * @param type 指数类型: 'indices' | 'sectors'，不传则默认返回 indices
  */
-export async function getRankingByDate(date: string): Promise<TrendRankingByDateResponse> {
-  const response = await fetch(`${API_BASE_URL}/trend-analysis/ranking/by-date?date=${date}`);
+export async function getRankingByDate(date: string, type?: IndexType): Promise<TrendRankingByDateResponse> {
+  const indexType = type || INDEX_TYPE.INDICES;
+  const url = `${API_BASE_URL}/trend-analysis/ranking/by-date?date=${date}&type=${indexType}`;
+  const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }

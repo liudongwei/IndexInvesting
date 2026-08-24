@@ -24,6 +24,7 @@ import {
 import { ResyncDto, BulkResyncDto } from './dto/resync.dto';
 import { ImportEastmoneyJsonDto } from './dto/import-eastmoney-json.dto';
 import { UpdateEastmoneyCookieDto } from './dto/update-eastmoney-cookie.dto';
+import { INDEX_TYPE, type IndexType } from '../common/constants/index-type.constants';
 
 @ApiTags('大盘指数管理')
 @Controller('indices')
@@ -268,7 +269,7 @@ export class IndicesController {
   @ApiOperation({
     summary: '批量重新同步所有指数数据',
     description:
-      '按日期范围重新同步所有指数的数据。不指定指数ID，会自动同步所有符合条件的指数。默认只同步 isActive=true 的指数。',
+      '按日期范围重新同步所有指数的数据。不指定指数ID，会自动同步所有符合条件的指数。默认只同步 isActive=true 的指数。支持按类型过滤：indices（大盘指数）或 sectors（行业指数）。',
   })
   async bulkResync(@Body() dto: BulkResyncDto) {
     const onlyActive = dto.onlyActive !== 'false';
@@ -277,6 +278,7 @@ export class IndicesController {
       dto.startDate,
       dto.endDate,
       onlyActive,
+      dto.type,
     );
 
     return {
@@ -369,11 +371,12 @@ export class IndicesController {
   @ApiOperation({
     summary: '批量智能同步所有符合条件的指数',
     description:
-      '同步所有 sync_mode=api 的指数，根据各自的 metadata.firstTradingDay 自动确定起始年份，按年递增拉取数据。',
+      '同步所有 sync_mode=api 的指数，根据各自的 metadata.firstTradingDay 自动确定起始年份，按年递增拉取数据。支持按类型过滤：indices（大盘指数）或 sectors（行业指数）。不传 type 则处理所有指数。',
   })
   async bulkSyncByMetadata(
     @Query('onlyActive') onlyActive: string = 'true',
     @Query('endYear') endYear?: string,
+    @Query('type') type?: IndexType,
   ) {
     const onlyActiveBool = onlyActive !== 'false';
 
@@ -391,6 +394,7 @@ export class IndicesController {
     const result = await this.indexSyncService.bulkSyncByMetadata(
       onlyActiveBool,
       endYearNum,
+      type,
     );
 
     return {

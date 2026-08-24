@@ -3,8 +3,10 @@ import {
   IsOptional,
   Matches,
   IsBooleanString,
+  IsIn,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { INDEX_TYPE } from '../../common/constants/index-type.constants';
 
 export class ResyncDto {
   @ApiProperty({
@@ -37,4 +39,12 @@ export class BulkResyncDto extends ResyncDto {
   @IsOptional()
   @IsBooleanString()
   onlyActive?: string = 'true';
+
+  @ApiProperty({
+    description: '指数类型：indices（大盘指数）或 sectors（行业指数），不传或传空则同步所有',
+    example: 'indices',
+    required: false,
+  })
+  @IsOptional()
+  type?: string;
 }

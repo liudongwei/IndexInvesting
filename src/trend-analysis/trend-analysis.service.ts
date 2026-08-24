@@ -6,6 +6,7 @@ import { MovingAverage } from '../moving-averages/entities/moving-average.entity
 import { IndexHistory } from '../indices/entities/index-history.entity';
 import { Index } from '../indices/entities/index.entity';
 import { IndicesService } from '../indices/indices.service';
+import { INDEX_TYPE, IndexType } from '../common/constants/index-type.constants';
 
 export interface TrendAnalysisResult {
   indexId: string;
@@ -860,7 +861,9 @@ export class TrendAnalysisService {
    * 【临界点规则】指数只有在有交易数据的那天及以后才参与排名
    * 例如：北证50在2023年1月1日才有数据，那么在2022年12月31日的排名中不应包含北证50
    */
-  async getLatestTrendRanking(): Promise<
+  async getLatestTrendRanking(
+    indexType?: IndexType,
+  ): Promise<
     (TrendAnalysis & {
       isTodayData: boolean;
       actualDataDate: Date;
@@ -869,7 +872,24 @@ export class TrendAnalysisService {
   > {
     // 1. 获取所有活跃的指数
     const indices = await this.indicesService.findAll();
-    const activeIndices = indices.filter((i) => i.isActive);
+    let activeIndices = indices.filter((i) => i.isActive);
+    
+    // 如果指定了类型，按类型过滤
+    // 注意：indices 类型在数据库中存储为 'indices' 或 null/undefined
+    // sectors 类型在数据库中存储为 'sectors'
+    if (indexType) {
+      activeIndices = activeIndices.filter((i) => {
+        const metadataType = i.metadata?.type;
+        if (indexType === INDEX_TYPE.INDICES) {
+          // indices 类型包括：明确标记为 'indices' 或未设置 type 的
+          return metadataType === INDEX_TYPE.INDICES || !metadataType;
+        } else if (indexType === INDEX_TYPE.SECTORS) {
+          // sectors 类型：明确标记为 'sectors'
+          return metadataType === INDEX_TYPE.SECTORS;
+        }
+        return false;
+      });
+    }
 
     // 2. 获取趋势数据中最新的日期（基准日期）
     const latestRecords = await this.trendRepository.find({
@@ -899,6 +919,19 @@ export class TrendAnalysisService {
         where: { tradeDate: prevTradingDate },
         relations: { index: true },
       });
+      
+      // 如果指定了类型，对prevData也按类型过滤（确保排名变化计算正确）
+      if (indexType) {
+        prevData = prevData.filter((item) => {
+          const itemType = item.indexType;
+          if (indexType === INDEX_TYPE.INDICES) {
+            return itemType === INDEX_TYPE.INDICES || !itemType;
+          } else if (indexType === INDEX_TYPE.SECTORS) {
+            return itemType === INDEX_TYPE.SECTORS;
+          }
+          return false;
+        });
+      }
     }
 
     // 6. 构建指数ID到数据的映射
@@ -1012,6 +1045,7 @@ export class TrendAnalysisService {
    */
   async getTrendRankingByDate(
     date: string,
+    indexType?: IndexType,
   ): Promise<
     (TrendAnalysis & {
       isTodayData: boolean;
@@ -1040,19 +1074,33 @@ export class TrendAnalysisService {
 
     // 如果查询的是最新日期，使用 getLatestTrendRanking（包含数据补全逻辑）
     if (date === latestDateStr) {
-      return await this.getLatestTrendRanking();
+      return await this.getLatestTrendRanking(indexType);
     }
 
     // 查询历史日期，需要获取前一天的偏离率来判断转换
     // 使用字符串日期创建 Date 对象用于获取前一个交易日
     const tradeDateObj = new Date(date + 'T00:00:00');
     const prevDate = await this.getPreviousTradingDate(tradeDateObj);
-    const prevData = prevDate
-      ? await this.trendRepository.find({
-          where: { tradeDate: prevDate },
-          relations: { index: true },
-        })
-      : [];
+    let prevData: TrendAnalysis[] = [];
+    if (prevDate) {
+      prevData = await this.trendRepository.find({
+        where: { tradeDate: prevDate },
+        relations: { index: true },
+      });
+      
+      // 如果指定了类型，对prevData也按类型过滤（确保排名变化计算正确）
+      if (indexType) {
+        prevData = prevData.filter((item) => {
+          const itemType = item.indexType;
+          if (indexType === INDEX_TYPE.INDICES) {
+            return itemType === INDEX_TYPE.INDICES || !itemType;
+          } else if (indexType === INDEX_TYPE.SECTORS) {
+            return itemType === INDEX_TYPE.SECTORS;
+          }
+          return false;
+        });
+      }
+    }
     const prevDataMap = new Map(prevData.map((d) => [d.indexId, d]));
 
     // 查询历史日期的数据
@@ -1072,7 +1120,7 @@ export class TrendAnalysisService {
     // 【临界点规则】过滤掉在查询日期还没有数据的指数
     // 只保留首个交易日 <= 查询日期的指数
     // 【修复】如果无法获取首个交易日（返回null），但趋势数据存在，则保留该数据
-    const filteredData: TrendAnalysis[] = [];
+    let filteredData: TrendAnalysis[] = [];
     for (const item of data) {
       const firstTradeDate = await this.getIndexFirstTradeDate(item.indexId);
       // 使用字符串比较避免时区问题
@@ -1091,6 +1139,23 @@ export class TrendAnalysisService {
           `[${date}] 过滤掉 ${item.indexId} 的数据，首个交易日 ${firstTradeDateStr} > 查询日期 ${date} (字符串比较: ${firstTradeDateStr} <= ${date} = ${firstTradeDateStr <= date})`,
         );
       }
+    }
+    
+    // 如果指定了类型，按类型过滤
+    // 注意：indices 类型在数据库中存储为 'indices' 或 null/undefined
+    // sectors 类型在数据库中存储为 'sectors'
+    if (indexType) {
+      filteredData = filteredData.filter((item) => {
+        const itemType = item.indexType;
+        if (indexType === INDEX_TYPE.INDICES) {
+          // indices 类型包括：明确标记为 'indices' 或未设置 type 的
+          return itemType === INDEX_TYPE.INDICES || !itemType;
+        } else if (indexType === INDEX_TYPE.SECTORS) {
+          // sectors 类型：明确标记为 'sectors'
+          return itemType === INDEX_TYPE.SECTORS;
+        }
+        return false;
+      });
     }
 
     if (filteredData.length === 0 && data.length > 0) {

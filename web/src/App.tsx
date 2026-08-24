@@ -8,13 +8,15 @@ import { IndexHistory } from './components/IndexHistory';
 import { CronConfig } from './components/CronConfig';
 import { getLatestRanking, getRankingByDate } from './services/api';
 import type { TrendRankingItem } from './types/trend';
+import { INDEX_TYPE, type IndexType } from './types/index-type';
 
 // 导航栏组件
 function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const isRanking = location.pathname === '/' || location.pathname === '/ranking';
+  const isIndexRanking = location.pathname === '/' || location.pathname === '/ranking';
+  const isSectorRanking = location.pathname === '/sectors';
   const isEastmoney = location.pathname === '/eastmoney-import';
   const isAdmin = location.pathname.startsWith('/admin');
 
@@ -26,10 +28,18 @@ function Navbar() {
             <button
               onClick={() => navigate('/')}
               className={`text-sm font-medium transition-colors ${
-                isRanking ? 'text-white' : 'text-gray-400 hover:text-white'
+                isIndexRanking ? 'text-white' : 'text-gray-400 hover:text-white'
               }`}
             >
-              趋势排名
+              核心指数
+            </button>
+            <button
+              onClick={() => navigate('/sectors')}
+              className={`text-sm font-medium transition-colors ${
+                isSectorRanking ? 'text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              行业指数
             </button>
             <button
               onClick={() => navigate('/eastmoney-import')}
@@ -62,7 +72,7 @@ function Navbar() {
 }
 
 // 趋势排名页面
-function RankingPage() {
+function RankingPage({ type = INDEX_TYPE.INDICES }: { type?: IndexType }) {
   const [data, setData] = useState<TrendRankingItem[]>([]);
   const [tradeDate, setTradeDate] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -75,7 +85,7 @@ function RankingPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await getLatestRanking();
+      const response = await getLatestRanking(type);
       if (response.success) {
         setData(response.data);
         setTradeDate(response.tradeDate);
@@ -96,7 +106,7 @@ function RankingPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await getRankingByDate(date);
+      const response = await getRankingByDate(date, type);
       if (response.success) {
         setData(response.data);
         setTradeDate(response.tradeDate);
@@ -115,7 +125,7 @@ function RankingPage() {
   // 初始加载
   useEffect(() => {
     loadLatestData();
-  }, []);
+  }, [type]);
 
   // 格式化日期显示
   const formatDisplayDate = (dateStr: string) => {
@@ -140,7 +150,7 @@ function RankingPage() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
-                鱼盆趋势模型历史回测数据
+                鱼盆趋势模型{type === INDEX_TYPE.SECTORS ? '行业指数' : '核心指数'}
               </h1>
               <p className="text-sm text-gray-500 mt-1">
                 日期：{formatDisplayDate(tradeDate)}
@@ -273,8 +283,9 @@ function AppContent() {
     <div className="min-h-screen bg-gray-50">
       {!isAdmin && <Navbar />}
       <Routes>
-        <Route path="/" element={<RankingPage />} />
+        <Route path="/" element={<RankingPage type={INDEX_TYPE.INDICES} />} />
         <Route path="/ranking" element={<Navigate to="/" replace />} />
+        <Route path="/sectors" element={<RankingPage type={INDEX_TYPE.SECTORS} />} />
         <Route path="/eastmoney-import" element={<EastmoneyImportPage />} />
         <Route path="/index/:indexId" element={<IndexDetail />} />
         <Route path="/admin/*" element={<AdminLayout />} />

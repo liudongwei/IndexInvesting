@@ -4,6 +4,7 @@ import { Repository, Between } from 'typeorm';
 import { MovingAverage } from './entities/moving-average.entity';
 import { IndexHistory } from '../indices/entities/index-history.entity';
 import { Index } from '../indices/entities/index.entity';
+import { INDEX_TYPE, type IndexType } from '../common/constants/index-type.constants';
 
 export interface MACalculationResult {
   tradeDate: Date;
@@ -721,16 +722,35 @@ export class MovingAveragesService {
   /**
    * 获取所有指数的最新MA数据（用于排名）
    */
-  async getAllLatestMAData(): Promise<MovingAverage[]> {
+  async getAllLatestMAData(indexType?: IndexType): Promise<MovingAverage[]> {
     // 使用 DISTINCT ON 获取每个指数的最新记录（PostgreSQL 特性）
-    const latestData = await this.maRepository
+    const query = this.maRepository
       .createQueryBuilder('ma')
       .distinctOn(['ma.indexId'])
       .orderBy('ma.indexId', 'ASC')
       .addOrderBy('ma.tradeDate', 'DESC')
-      .leftJoinAndSelect('ma.index', 'index')
-      .getMany();
-
+      .leftJoinAndSelect('ma.index', 'index');
+    
+    // 如果指定了类型，添加过滤条件
+    // 注意：indices 类型在数据库中存储为 'indices' 或 null/undefined
+    // sectors 类型在数据库中存储为 'sectors'
+    if (indexType) {
+      if (indexType === INDEX_TYPE.INDICES) {
+        // indices 类型包括：明确标记为 'indices' 或未设置 type 的
+        query.andWhere(
+          `(index.metadata->>'type' = :type OR index.metadata->>'type' IS NULL)`,
+          { type: INDEX_TYPE.INDICES },
+        );
+      } else if (indexType === INDEX_TYPE.SECTORS) {
+        // sectors 类型：明确标记为 'sectors'
+        query.andWhere(
+          `index.metadata->>'type' = :type`,
+          { type: INDEX_TYPE.SECTORS },
+        );
+      }
+    }
+    
+    const latestData = await query.getMany();
     return latestData;
   }
 
