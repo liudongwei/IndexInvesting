@@ -145,7 +145,7 @@ export class IndexSyncService {
 
           // 添加延迟，避免请求过快
           if (year < targetEndYear) {
-            await new Promise((r) => setTimeout(r, 800));
+            await new Promise((r) => setTimeout(r, 1500));
           }
         } catch (error) {
           this.logger.error(`同步 ${year} 年数据失败: ${error.message}`);
