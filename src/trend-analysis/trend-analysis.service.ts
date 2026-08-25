@@ -1324,7 +1324,9 @@ export class TrendAnalysisService {
       };
     }
 
-    // 1. 删除指定日期范围内的旧趋势分析数据
+    // 1. 删除指定指数在日期范围内的旧趋势分析数据
+    // 【修复】只删除传入的指数ID列表的数据，避免影响其他类型
+    const indexIds = indicesToCalculate.map((i) => i.id);
     const deleteResult = await this.trendRepository
       .createQueryBuilder()
       .delete()
@@ -1333,13 +1335,13 @@ export class TrendAnalysisService {
         startDate,
         endDate,
       })
+      .andWhere('indexId IN (:...indexIds)', { indexIds })
       .execute();
 
     const deletedCount = deleteResult.affected || 0;
-    this.logger.log(`已删除 ${deletedCount} 条旧的趋势分析数据`);
+    this.logger.log(`已删除 ${deletedCount} 条旧的趋势分析数据（${indexIds.length} 个指数）`);
 
-    // 2. 获取需要重新计算的指数ID列表
-    const indexIds = indicesToCalculate.map((i) => i.id);
+    // 2. 使用已获取的 indexIds 列表
 
     // 3. 获取这些指数在日期范围内的MA数据（扩展范围，包含startDate前一天用于计算changePercent）
     const allMADatas = new Map<string, MovingAverage[]>();
