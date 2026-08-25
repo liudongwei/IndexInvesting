@@ -15,6 +15,17 @@ import * as path from 'path';
 import * as http from 'http';
 import * as https from 'https';
 
+// 尝试导入 TLS 指纹模拟库
+let impersonate: any = null;
+let Browser: any = null;
+try {
+  const curlImpersonate = require('node-libcurl-impersonate-ja3');
+  impersonate = curlImpersonate.impersonate;
+  Browser = curlImpersonate.Browser;
+} catch (e) {
+  // 库未安装，将使用普通HTTP请求
+}
+
 /**
  * 全局请求时间控制 - 确保所有东财请求间隔至少3秒
  */
@@ -177,7 +188,47 @@ export class EastmoneyDataService {
   }
 
   /**
+   * 使用 TLS 指纹模拟的请求方法
+   * 模拟 Chrome 浏览器的 TLS 指纹，绕过反爬检测
+   */
+  private async requestWithImpersonate(url: string): Promise<any> {
+    if (!impersonate || !Browser) {
+      throw new Error('node-libcurl-impersonate-ja3 库未安装');
+    }
+
+    const curly = impersonate(Browser.Chrome);
+    const headers = this.getEastmoneyHeaders();
+    
+    // 转换 headers 格式
+    const headerArray: string[] = [];
+    for (const [key, value] of Object.entries(headers)) {
+      headerArray.push(`${key}: ${value}`);
+    }
+
+    const response = await curly.get(url, {
+      timeout: 30000,
+      httpHeader: headerArray,
+    });
+
+    // 检查响应状态
+    if (response.statusCode !== 200) {
+      throw new Error(`HTTP ${response.statusCode}: ${response.data}`);
+    }
+
+    // 解析 JSON 响应
+    const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+    
+    // 检查是否被拦截（返回HTML而不是JSON）
+    if (typeof data === 'string' && data.includes('<html')) {
+      throw new Error('请求被拦截：返回了HTML页面而非JSON数据');
+    }
+
+    return data;
+  }
+
+  /**
    * 带重试机制的HTTP请求
+   * 优先使用 TLS 指纹模拟，失败时回退到普通HTTP请求
    * @param url 请求URL
    * @param maxRetries 最大重试次数
    * @param retryDelay 重试延迟基数（毫秒）
@@ -199,6 +250,18 @@ export class EastmoneyDataService {
           const delay = retryDelay * (attempt - 1) + Math.floor(Math.random() * 1000);
           this.logger.log(`第 ${attempt} 次尝试，等待 ${delay}ms...`);
           await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+
+        // 优先尝试使用 TLS 指纹模拟（如果可用）
+        if (impersonate && Browser && attempt === 1) {
+          try {
+            this.logger.log('使用 TLS 指纹模拟请求...');
+            return await this.requestWithImpersonate(url);
+          } catch (impersonateError) {
+            const errorMsg = impersonateError instanceof Error ? impersonateError.message : String(impersonateError);
+            this.logger.warn(`TLS指纹模拟失败: ${errorMsg}，回退到普通HTTP请求`);
+            // 如果 TLS 模拟失败，继续下面的普通请求
+          }
         }
 
         // 创建新的agent，禁用keep-alive，每次请求使用新连接
