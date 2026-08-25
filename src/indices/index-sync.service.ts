@@ -145,8 +145,10 @@ export class IndexSyncService {
 
           // 添加延迟，避免请求过快（东财API需要更长的间隔）
           if (year < targetEndYear) {
-            // 东财API需要更长的间隔来避免触发反爬
-            const delay = dataSource === 'easymoney' ? 3000 + Math.floor(Math.random() * 2000) : 1500;
+            // 东财API需要至少3.5秒的间隔来避免触发反爬
+            const delay = dataSource === 'easymoney' 
+              ? 4000 + Math.floor(Math.random() * 2000)  // 4-6秒随机间隔
+              : 1500;
             this.logger.log(`等待 ${delay}ms 后继续下一年的同步...`);
             await new Promise((r) => setTimeout(r, delay));
           }
@@ -155,7 +157,7 @@ export class IndexSyncService {
           years.push({ year, count: 0, status: `error: ${error.message}` });
           // 失败后增加额外延迟，避免连续失败
           if (dataSource === 'easymoney' && year < targetEndYear) {
-            const errorDelay = 5000;
+            const errorDelay = 8000 + Math.floor(Math.random() * 4000);
             this.logger.log(`同步失败，额外等待 ${errorDelay}ms...`);
             await new Promise((r) => setTimeout(r, errorDelay));
           }

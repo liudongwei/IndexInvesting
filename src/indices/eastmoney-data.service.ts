@@ -12,6 +12,14 @@ import {
 } from './dto/import-eastmoney-json.dto';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as http from 'http';
+import * as https from 'https';
+
+/**
+ * 全局请求时间控制 - 确保所有东财请求间隔至少3秒
+ */
+let globalLastRequestTime = 0;
+const MIN_REQUEST_INTERVAL = 3500; // 最小请求间隔3.5秒
 
 /**
  * 东财K线数据项
@@ -153,6 +161,22 @@ export class EastmoneyDataService {
   }
 
   /**
+   * 全局请求间隔控制 - 确保两次请求间隔至少3.5秒
+   */
+  private async enforceGlobalRateLimit(): Promise<void> {
+    const now = Date.now();
+    const timeSinceLastRequest = now - globalLastRequestTime;
+    
+    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+      const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
+      this.logger.log(`全局限流：等待 ${waitTime}ms 以满足最小请求间隔...`);
+      await new Promise((resolve) => setTimeout(resolve, waitTime));
+    }
+    
+    globalLastRequestTime = Date.now();
+  }
+
+  /**
    * 带重试机制的HTTP请求
    * @param url 请求URL
    * @param maxRetries 最大重试次数
@@ -167,6 +191,9 @@ export class EastmoneyDataService {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
+        // 全局限流检查
+        await this.enforceGlobalRateLimit();
+
         // 每次请求前添加随机延迟（第一次除外）
         if (attempt > 1) {
           const delay = retryDelay * (attempt - 1) + Math.floor(Math.random() * 1000);
@@ -174,14 +201,26 @@ export class EastmoneyDataService {
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
 
+        // 创建新的agent，禁用keep-alive，每次请求使用新连接
+        const httpAgent = new http.Agent({ 
+          keepAlive: false,
+          maxSockets: 1, // 限制并发连接数
+        });
+
         const response = await firstValueFrom(
           this.httpService.get(url, {
             timeout: 30000,
             headers: this.getEastmoneyHeaders(),
-            // 禁用HTTP keep-alive，避免连接复用被检测
-            httpAgent: new (require('http').Agent)({ keepAlive: false }),
+            httpAgent: httpAgent,
+            // 确保不使用缓存响应
+            validateStatus: () => true,
           }),
         );
+
+        // 检查是否被拦截（返回HTML而不是JSON）
+        if (typeof response.data === 'string' && response.data.includes('<html')) {
+          throw new Error('请求被拦截：返回了HTML页面而非JSON数据');
+        }
 
         return response.data;
       } catch (error) {
@@ -194,10 +233,12 @@ export class EastmoneyDataService {
           break;
         }
 
-        // 针对 socket hang up 错误，增加额外延迟
-        if (errorMsg.includes('socket hang up') || errorMsg.includes('ECONNRESET')) {
-          const extraDelay = 5000 + Math.floor(Math.random() * 3000);
-          this.logger.log(`检测到连接重置，额外等待 ${extraDelay}ms...`);
+        // 针对 socket hang up 或连接重置错误，增加额外延迟
+        if (errorMsg.includes('socket hang up') || 
+            errorMsg.includes('ECONNRESET') || 
+            errorMsg.includes('被拦截')) {
+          const extraDelay = 8000 + Math.floor(Math.random() * 5000);
+          this.logger.log(`检测到连接问题，额外等待 ${extraDelay}ms...`);
           await new Promise((resolve) => setTimeout(resolve, extraDelay));
         }
       }
