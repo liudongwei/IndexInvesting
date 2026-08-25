@@ -46,7 +46,7 @@ export class IndexDataService {
       } catch (err) {
         if (i === retries - 1) throw err;
         this.logger.warn(`请求失败，重试 ${i + 1}/${retries}...`);
-        await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+        await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
       }
     }
     throw new Error('请求失败，已重试3次');
@@ -177,7 +177,7 @@ export class IndexDataService {
 
         // 添加延迟，避免请求过快
         if (year < endYear) {
-          await new Promise((r) => setTimeout(r, 500));
+          await new Promise((r) => setTimeout(r, 1500));
         }
       } catch (error) {
         this.logger.error(`获取 ${year} 年数据失败: ${error.message}`);

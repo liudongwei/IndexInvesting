@@ -854,6 +854,80 @@ export class TrendAnalysisService {
   }
 
   /**
+   * 批量获取多个指数的首个交易日
+   * 【性能优化】一次性查询所有指数的首个交易日，避免N+1查询
+   */
+  private async batchGetIndicesFirstTradeDate(
+    indexIds: string[],
+  ): Promise<Map<string, Date | null>> {
+    if (indexIds.length === 0) {
+      return new Map();
+    }
+
+    const results = await this.maRepository
+      .createQueryBuilder('ma')
+      .select('ma.indexId', 'indexId')
+      .addSelect('MIN(ma.tradeDate)', 'firstTradeDate')
+      .where('ma.indexId IN (:...indexIds)', { indexIds })
+      .groupBy('ma.indexId')
+      .getRawMany();
+
+    const dateMap = new Map<string, Date | null>();
+    for (const row of results) {
+      dateMap.set(row.indexId, row.firstTradeDate ? new Date(row.firstTradeDate) : null);
+    }
+
+    // 为没有数据的指数设置 null
+    for (const indexId of indexIds) {
+      if (!dateMap.has(indexId)) {
+        dateMap.set(indexId, null);
+      }
+    }
+
+    return dateMap;
+  }
+
+  /**
+   * 批量获取指定日期之前每个指数的最新趋势数据
+   * 【性能优化】一次性查询所有指数的前一天数据，避免N+1查询
+   */
+  private async batchGetPreviousTrendData(
+    indexIds: string[],
+    beforeDate: Date,
+  ): Promise<Map<string, TrendAnalysis>> {
+    if (indexIds.length === 0) {
+      return new Map();
+    }
+
+    // 【修复】使用原始 SQL 查询避免 TypeORM 子查询别名问题
+    const query = `
+      SELECT t1.* FROM trend_analysis t1
+      INNER JOIN (
+        SELECT "indexId", MAX("tradeDate") as "maxDate"
+        FROM trend_analysis
+        WHERE "indexId" IN (${indexIds.map((_, i) => `$${i + 1}`).join(',')})
+          AND "tradeDate" < $${indexIds.length + 1}
+        GROUP BY "indexId"
+      ) t2 ON t1."indexId" = t2."indexId" AND t1."tradeDate" = t2."maxDate"
+    `;
+
+    const results = await this.trendRepository.query(query, [
+      ...indexIds,
+      beforeDate,
+    ]);
+
+    const dataMap = new Map<string, TrendAnalysis>();
+    for (const row of results) {
+      // 将原始结果转换为实体对象
+      const entities = this.trendRepository.create(row);
+      const entity = Array.isArray(entities) ? entities[0] : entities;
+      dataMap.set(entity.indexId, entity);
+    }
+
+    return dataMap;
+  }
+
+  /**
    * 获取最新日期的所有指数趋势分析（用于排名展示）
    * 如果某个指数在最新日期没有数据，则使用其上一个交易日的数据补全
    * 确保排名列表始终包含所有活跃指数的全量数据
@@ -938,6 +1012,13 @@ export class TrendAnalysisService {
     const latestDataMap = new Map(latestData.map((d) => [d.indexId, d]));
     const prevDataMap = new Map(prevData.map((d) => [d.indexId, d]));
 
+    // 【性能优化】批量获取所有指数的首个交易日和前一天数据，避免N+1查询
+    const activeIndexIds = activeIndices.map((i) => i.id);
+    const [firstTradeDateMap, prevTrendDataMap] = await Promise.all([
+      this.batchGetIndicesFirstTradeDate(activeIndexIds),
+      this.batchGetPreviousTrendData(activeIndexIds, latestDate),
+    ]);
+
     // 7. 为每个指数选择数据：优先用基准日期的，没有则用上一个交易日的
     // 【临界点规则】只包含在基准日期已经有数据的指数
     const result: (TrendAnalysis & {
@@ -946,12 +1027,14 @@ export class TrendAnalysisService {
       prevDeviationRate: number | null;
     })[] = [];
 
+    // 构建指数ID到指数对象的映射（用于补全数据时附加指数信息）
+    const indexMap = new Map(activeIndices.map((i) => [i.id, i]));
+
     for (const index of activeIndices) {
       const latestRecord = latestDataMap.get(index.id);
 
       // 【临界点规则】检查指数在基准日期是否已经有数据
-      // 如果无法获取首个交易日（返回null），但趋势数据存在，则保留该数据
-      const firstTradeDate = await this.getIndexFirstTradeDate(index.id);
+      const firstTradeDate = firstTradeDateMap.get(index.id);
       if (firstTradeDate && firstTradeDate > latestDate) {
         // 该指数在基准日期还没有数据（首个交易日明确晚于基准日期），跳过
         continue;
@@ -959,14 +1042,8 @@ export class TrendAnalysisService {
 
       if (latestRecord) {
         // 基准日期有数据，使用基准日期的
-        // 获取该指数前一天的偏离率
-        const prevRecordForIndex = await this.trendRepository.findOne({
-          where: {
-            indexId: index.id,
-            tradeDate: LessThan(latestDate),
-          },
-          order: { tradeDate: 'DESC' },
-        });
+        // 从批量查询结果中获取前一天数据
+        const prevRecordForIndex = prevTrendDataMap.get(index.id);
         result.push({
           ...latestRecord,
           isTodayData: true,
@@ -974,24 +1051,22 @@ export class TrendAnalysisService {
           prevDeviationRate: prevRecordForIndex?.deviationRate || null,
         });
       } else {
-        // 基准日期没有数据，查询该指数最近的一条数据来补全
-        const prevRecordForIndex = await this.trendRepository.findOne({
-          where: {
-            indexId: index.id,
-            tradeDate: LessThan(latestDate),
-          },
-          order: { tradeDate: 'DESC' },
-        });
+        // 基准日期没有数据，从批量查询结果中获取最近数据来补全
+        const prevRecordForIndex = prevTrendDataMap.get(index.id);
 
         if (prevRecordForIndex) {
-          // 使用该指数最近的数据补全，并标记
-          result.push({
-            ...prevRecordForIndex,
-            tradeDate: latestDate, // 统一显示为基准日期
-            isTodayData: false,
-            actualDataDate: prevRecordForIndex.tradeDate, // 记录实际数据日期
-            prevDeviationRate: null, // 补全数据没有前一天的数据
-          });
+          // 【修复】附加指数信息到补全的数据中
+          const indexInfo = indexMap.get(index.id);
+          if (indexInfo) {
+            result.push({
+              ...prevRecordForIndex,
+              index: indexInfo, // 附加指数信息
+              tradeDate: latestDate, // 统一显示为基准日期
+              isTodayData: false,
+              actualDataDate: prevRecordForIndex.tradeDate, // 记录实际数据日期
+              prevDeviationRate: null, // 补全数据没有前一天的数据
+            });
+          }
         }
       }
     }
@@ -1118,11 +1193,13 @@ export class TrendAnalysisService {
     // this.logger.debug(`[${date}] 查询到 ${data.length} 条趋势数据`);
 
     // 【临界点规则】过滤掉在查询日期还没有数据的指数
-    // 只保留首个交易日 <= 查询日期的指数
-    // 【修复】如果无法获取首个交易日（返回null），但趋势数据存在，则保留该数据
+    // 【性能优化】批量获取所有指数的首个交易日，避免N+1查询
+    const dataIndexIds = data.map((item) => item.indexId);
+    const firstTradeDateMap = await this.batchGetIndicesFirstTradeDate(dataIndexIds);
+
     let filteredData: TrendAnalysis[] = [];
     for (const item of data) {
-      const firstTradeDate = await this.getIndexFirstTradeDate(item.indexId);
+      const firstTradeDate = firstTradeDateMap.get(item.indexId);
       // 使用字符串比较避免时区问题
       const firstTradeDateStr = firstTradeDate
         ? this.formatDate(firstTradeDate)

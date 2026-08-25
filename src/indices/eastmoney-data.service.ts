@@ -125,12 +125,85 @@ export class EastmoneyDataService {
 
   /**
    * 获取东财请求头
+   * 添加动态请求头以模拟真实浏览器行为
    */
   private getEastmoneyHeaders(): Record<string, string> {
-    return {
+    const baseHeaders = {
       ...this.eastmoneyConfig.headers,
       Cookie: this.eastmoneyConfig.cookie,
     };
+
+    // 添加动态请求头，模拟真实浏览器行为
+    return {
+      ...baseHeaders,
+      // 添加随机性，避免请求模式过于固定
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    };
+  }
+
+  /**
+   * 随机延迟，用于反爬防护
+   * @param minMs 最小延迟毫秒数
+   * @param maxMs 最大延迟毫秒数
+   */
+  private async randomDelay(minMs: number = 1000, maxMs: number = 3000): Promise<void> {
+    const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+
+  /**
+   * 带重试机制的HTTP请求
+   * @param url 请求URL
+   * @param maxRetries 最大重试次数
+   * @param retryDelay 重试延迟基数（毫秒）
+   */
+  private async requestWithRetry(
+    url: string,
+    maxRetries: number = 3,
+    retryDelay: number = 2000,
+  ): Promise<any> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // 每次请求前添加随机延迟（第一次除外）
+        if (attempt > 1) {
+          const delay = retryDelay * (attempt - 1) + Math.floor(Math.random() * 1000);
+          this.logger.log(`第 ${attempt} 次尝试，等待 ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+
+        const response = await firstValueFrom(
+          this.httpService.get(url, {
+            timeout: 30000,
+            headers: this.getEastmoneyHeaders(),
+            // 禁用HTTP keep-alive，避免连接复用被检测
+            httpAgent: new (require('http').Agent)({ keepAlive: false }),
+          }),
+        );
+
+        return response.data;
+      } catch (error) {
+        lastError = error as Error;
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`第 ${attempt}/${maxRetries} 次请求失败: ${errorMsg}`);
+
+        // 如果是最后一次尝试，抛出错误
+        if (attempt === maxRetries) {
+          break;
+        }
+
+        // 针对 socket hang up 错误，增加额外延迟
+        if (errorMsg.includes('socket hang up') || errorMsg.includes('ECONNRESET')) {
+          const extraDelay = 5000 + Math.floor(Math.random() * 3000);
+          this.logger.log(`检测到连接重置，额外等待 ${extraDelay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, extraDelay));
+        }
+      }
+    }
+
+    throw lastError || new Error('请求失败，已达到最大重试次数');
   }
 
   /**
@@ -551,14 +624,11 @@ export class EastmoneyDataService {
 
       this.logger.log(`从东财API获取 ${symbol} 数据，secid: ${secid}`);
 
-      const response = await firstValueFrom(
-        this.httpService.get(url, {
-          timeout: 15000,
-          headers: this.getEastmoneyHeaders(),
-        }),
-      );
-      // console.log(response.data);
-      const json = response.data;
+      // 请求前添加随机延迟，避免请求过于规律
+      await this.randomDelay(1500, 2500);
+
+      // 使用带重试机制的请求
+      const json = await this.requestWithRetry(url, 3, 3000);
 
       // 检查返回数据
       if (!json.data || !json.data.klines || !Array.isArray(json.data.klines)) {
@@ -1094,14 +1164,11 @@ export class EastmoneyDataService {
       // 调用东财API - 使用http协议避免SSL问题
       const url = `http://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${eastmoneyCode}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&end=20500101&lmt=${limit}`;
 
-      const response = await firstValueFrom(
-        this.httpService.get(url, {
-          timeout: 30000,
-          headers: this.getEastmoneyHeaders(),
-        }),
-      );
+      // 请求前添加随机延迟
+      await this.randomDelay(1500, 3000);
 
-      const jsonData = response.data;
+      // 使用带重试机制的请求
+      const jsonData = await this.requestWithRetry(url, 3, 3000);
 
       // 验证数据
       if (!jsonData?.data?.klines || !Array.isArray(jsonData.data.klines)) {

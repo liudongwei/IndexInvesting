@@ -7,6 +7,7 @@ import { Index as IndexEntity } from '../../indices/entities/index.entity';
  */
 @Entity('trend_analysis')
 @Index(['indexId', 'tradeDate'], { unique: true })
+@Index(['tradeDate']) // 【性能优化】加速按日期查询和排序
 export class TrendAnalysis {
   @PrimaryGeneratedColumn('uuid')
   id: string;

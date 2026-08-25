@@ -143,13 +143,22 @@ export class IndexSyncService {
             `${index.name} ${year} 年同步完成: ${savedCount} 条数据`,
           );
 
-          // 添加延迟，避免请求过快
+          // 添加延迟，避免请求过快（东财API需要更长的间隔）
           if (year < targetEndYear) {
-            await new Promise((r) => setTimeout(r, 1500));
+            // 东财API需要更长的间隔来避免触发反爬
+            const delay = dataSource === 'easymoney' ? 3000 + Math.floor(Math.random() * 2000) : 1500;
+            this.logger.log(`等待 ${delay}ms 后继续下一年的同步...`);
+            await new Promise((r) => setTimeout(r, delay));
           }
         } catch (error) {
           this.logger.error(`同步 ${year} 年数据失败: ${error.message}`);
           years.push({ year, count: 0, status: `error: ${error.message}` });
+          // 失败后增加额外延迟，避免连续失败
+          if (dataSource === 'easymoney' && year < targetEndYear) {
+            const errorDelay = 5000;
+            this.logger.log(`同步失败，额外等待 ${errorDelay}ms...`);
+            await new Promise((r) => setTimeout(r, errorDelay));
+          }
         }
       }
     } else {
@@ -186,7 +195,7 @@ export class IndexSyncService {
 
           // 添加延迟，避免请求过快
           if (year < targetEndYear) {
-            await new Promise((r) => setTimeout(r, 500));
+            await new Promise((r) => setTimeout(r, 1500));
           }
         } catch (error) {
           this.logger.error(`同步 ${year} 年数据失败: ${error.message}`);
@@ -318,7 +327,7 @@ export class IndexSyncService {
         totalCount += result.total;
 
         // 添加延迟，避免请求过快
-        await new Promise((r) => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 1500));
       } catch (error) {
         this.logger.error(`同步 ${index.name} 失败: ${error.message}`);
         results.push({
@@ -386,7 +395,7 @@ export class IndexSyncService {
 
         // 添加延迟，避免请求过快
         if (year < targetEndYear) {
-          await new Promise((r) => setTimeout(r, 500));
+          await new Promise((r) => setTimeout(r, 1500));
         }
       } catch (error) {
         this.logger.error(`同步 ${year} 年数据失败: ${error.message}`);
@@ -684,7 +693,7 @@ export class IndexSyncService {
         successCount++;
 
         // 添加延迟，避免请求过快
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 1500));
       } catch (error) {
         this.logger.error(`[${index.name}] 重新同步失败: ${error.message}`);
         results.push({
@@ -921,7 +930,7 @@ export class IndexSyncService {
         totalCount += count;
 
         // 添加延迟，避免请求过快
-        await new Promise((r) => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 1500));
       } catch (error) {
         this.logger.error(`同步 ${index.name} 失败: ${error.message}`);
         results.push({ name: index.name, count: 0 });
@@ -1193,7 +1202,7 @@ export class IndexSyncService {
         totalCount += count;
 
         // 添加延迟，避免请求过快
-        await new Promise((r) => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 1500));
       } catch (error) {
         this.logger.error(`同步 ${index.name} 失败: ${error.message}`);
         results.push({ name: index.name, count: 0 });
@@ -1249,7 +1258,7 @@ export class IndexSyncService {
         (index) => this.isJapanKoreaStock(index), // 排除日韩
       );
       results.push({ market: '台湾', total: taiwanResult.total });
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 1500));
 
       // 2. 日韩市场（14:30收盘）- 排除台湾市场（避免名称重叠）
       const japanKoreaResult = await this.syncIndicesByMarket(
