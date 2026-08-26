@@ -264,6 +264,60 @@ export class TrendAnalysisService {
   }
 
   /**
+   * 按指数类型计算排名
+   * 核心指数和行业指数分别计算排名
+   * @param allResults 所有指数的结果
+   * @param tradeDate 交易日期
+   * @param indexType 指数类型（indices 或 sectors）
+   * @param indicesByType 指数ID到指数信息的映射
+   * @returns 该类型内各指数的排名
+   */
+  calculateRankingsByType(
+    allResults: Map<string, TrendAnalysisResult[]>,
+    tradeDate: Date,
+    indexType: IndexType,
+    indicesByType: Map<string, Index>,
+  ): Map<string, number> {
+    const dateStr = this.formatDate(tradeDate);
+
+    // 收集该类型指数的偏离率
+    const deviations: { indexId: string; deviationRate: number }[] = [];
+
+    for (const [indexId, results] of allResults.entries()) {
+      // 检查该指数是否属于指定类型
+      const index = indicesByType.get(indexId);
+      const currentIndexType = index?.metadata?.type || INDEX_TYPE.INDICES;
+      
+      // 类型匹配检查
+      const isMatch = indexType === INDEX_TYPE.INDICES
+        ? currentIndexType === INDEX_TYPE.INDICES || !currentIndexType
+        : currentIndexType === INDEX_TYPE.SECTORS;
+      
+      if (!isMatch) {
+        continue;
+      }
+
+      const result = results.find(
+        (r) => this.formatDate(r.tradeDate) === dateStr,
+      );
+      if (result && result.deviationRate !== null) {
+        deviations.push({ indexId, deviationRate: result.deviationRate });
+      }
+    }
+
+    // 按偏离率降序排序（高的排前面）
+    deviations.sort((a, b) => b.deviationRate - a.deviationRate);
+
+    // 生成排名映射
+    const rankings = new Map<string, number>();
+    deviations.forEach((item, index) => {
+      rankings.set(item.indexId, index + 1);
+    });
+
+    return rankings;
+  }
+
+  /**
    * 计算排序变化（相对上一交易日）
    */
   async calculateRankChange(
@@ -498,6 +552,7 @@ export class TrendAnalysisService {
 
   /**
    * 重新计算指定日期范围内所有日期的排名
+   * 按指数类型分别计算排名（核心指数和行业指数分开排名）
    * @param dates 日期字符串数组（格式：YYYY-MM-DD）
    */
   private async recalculateRankingsForDates(dates: string[]): Promise<void> {
@@ -515,36 +570,64 @@ export class TrendAnalysisService {
         continue;
       }
 
-      // 按偏离率降序排序
-      const sortedData = [...allTrendData].sort(
-        (a, b) => (b.deviationRate || 0) - (a.deviationRate || 0),
-      );
+      // 按指数类型分组
+      const dataByType = {
+        [INDEX_TYPE.INDICES]: [] as TrendAnalysis[],
+        [INDEX_TYPE.SECTORS]: [] as TrendAnalysis[],
+      };
 
-      // 获取前一个交易日的排名数据（使用getPreviousTradingDate确保获取到实际有数据的日期）
+      for (const item of allTrendData) {
+        const indexType = item.indexType || INDEX_TYPE.INDICES;
+        if (indexType === INDEX_TYPE.SECTORS) {
+          dataByType[INDEX_TYPE.SECTORS].push(item);
+        } else {
+          dataByType[INDEX_TYPE.INDICES].push(item);
+        }
+      }
+
+      // 获取前一个交易日的排名数据（按类型分别获取）
       const prevDate = await this.getPreviousTradingDate(tradeDate);
-      let prevRankMap = new Map<string, number>();
+      const prevRankMapByType = {
+        [INDEX_TYPE.INDICES]: new Map<string, number>(),
+        [INDEX_TYPE.SECTORS]: new Map<string, number>(),
+      };
+
       if (prevDate) {
         const prevDayData = await this.trendRepository.find({
           where: { tradeDate: prevDate },
         });
-        prevRankMap = new Map(prevDayData.map((d) => [d.indexId, d.rank]));
+        for (const item of prevDayData) {
+          const indexType = item.indexType || INDEX_TYPE.INDICES;
+          prevRankMapByType[indexType].set(item.indexId, item.rank);
+        }
       }
 
-      // 更新排名
-      for (let i = 0; i < sortedData.length; i++) {
-        const item = sortedData[i];
-        const newRank = i + 1;
-        const prevRank = prevRankMap.get(item.indexId);
-        const rankChange = prevRank !== undefined ? prevRank - newRank : 0;
+      // 按类型分别更新排名
+      for (const indexType of [INDEX_TYPE.INDICES, INDEX_TYPE.SECTORS]) {
+        const typeData = dataByType[indexType];
+        if (typeData.length === 0) continue;
 
-        await this.trendRepository.update(
-          { id: item.id },
-          {
-            rank: newRank,
-            rankChange,
-            totalRankCount: sortedData.length,
-          },
+        // 按偏离率降序排序
+        const sortedData = [...typeData].sort(
+          (a, b) => (b.deviationRate || 0) - (a.deviationRate || 0),
         );
+
+        // 更新该类型的排名
+        for (let i = 0; i < sortedData.length; i++) {
+          const item = sortedData[i];
+          const newRank = i + 1;
+          const prevRank = prevRankMapByType[indexType].get(item.indexId);
+          const rankChange = prevRank !== undefined ? prevRank - newRank : 0;
+
+          await this.trendRepository.update(
+            { id: item.id },
+            {
+              rank: newRank,
+              rankChange,
+              totalRankCount: sortedData.length,
+            },
+          );
+        }
       }
     }
 
@@ -716,16 +799,38 @@ export class TrendAnalysisService {
     //   `[performFullAnalysis] 所有日期: ${Array.from(allDates).sort().join(', ')}`,
     // );
 
-    // 4. 对每个日期计算排名和排序变化
+    // 4. 按指数类型分组（核心指数 vs 行业指数）
+    const indicesByType = new Map<string, Index>();
+    for (const index of indicesToCalculate) {
+      indicesByType.set(index.id, index);
+    }
+
+    // 5. 对每个日期计算排名和排序变化（按类型分别计算）
     const finalResults: TrendAnalysisResult[] = [];
-    // 用于存储每个指数前一天的排名（内存中计算，避免查询数据库）
-    const previousRanks = new Map<string, number>();
+    // 用于存储每个指数前一天的排名（按类型分别存储）
+    const previousRanksByType = {
+      [INDEX_TYPE.INDICES]: new Map<string, number>(),
+      [INDEX_TYPE.SECTORS]: new Map<string, number>(),
+    };
 
     for (const dateStr of Array.from(allDates).sort()) {
       const date = new Date(dateStr);
 
-      // 计算该日期的排名
-      const rankings = this.calculateRankings(allTrendResults, date);
+      // 按类型分别计算排名
+      const rankingsByType = {
+        [INDEX_TYPE.INDICES]: this.calculateRankingsByType(
+          allTrendResults,
+          date,
+          INDEX_TYPE.INDICES,
+          indicesByType,
+        ),
+        [INDEX_TYPE.SECTORS]: this.calculateRankingsByType(
+          allTrendResults,
+          date,
+          INDEX_TYPE.SECTORS,
+          indicesByType,
+        ),
+      };
 
       // 更新每个指数在该日期的排名和排序变化
       for (const [indexId, results] of allTrendResults.entries()) {
@@ -733,13 +838,18 @@ export class TrendAnalysisService {
           (r) => this.formatDate(r.tradeDate) === dateStr,
         );
         if (result) {
-          const rank = rankings.get(indexId) || 0;
-          // 从内存中获取前一天的排名计算变化
-          const prevRank = previousRanks.get(indexId);
+          const index = indicesByType.get(indexId);
+          const indexType = index?.metadata?.type || INDEX_TYPE.INDICES;
+          
+          // 获取该类型内的排名
+          const rank = rankingsByType[indexType].get(indexId) || 0;
+          
+          // 从该类型的前一天排名计算变化
+          const prevRank = previousRanksByType[indexType].get(indexId);
           const rankChange = prevRank !== undefined ? prevRank - rank : 0;
 
           // 保存当前排名供下一天使用
-          previousRanks.set(indexId, rank);
+          previousRanksByType[indexType].set(indexId, rank);
 
           finalResults.push({
             ...result,
@@ -1071,25 +1181,69 @@ export class TrendAnalysisService {
       }
     }
 
-    // 8. 按偏离率倒序排序（从大到小，10 排在 5 前面）
-    result.sort((a, b) => (b.deviationRate || 0) - (a.deviationRate || 0));
+    // 8. 按指数类型分组，分别排序和计算排名
+    const resultByType = {
+      [INDEX_TYPE.INDICES]: [] as (TrendAnalysis & {
+        isTodayData: boolean;
+        actualDataDate: Date;
+        prevDeviationRate: number | null;
+      })[],
+      [INDEX_TYPE.SECTORS]: [] as (TrendAnalysis & {
+        isTodayData: boolean;
+        actualDataDate: Date;
+        prevDeviationRate: number | null;
+      })[],
+    };
 
-    // 9. 重新赋值排名，并重新计算rankChange
-    // 构建前一个交易日排名的映射（用于计算排名变化）
-    const prevRankMap = new Map<string, number>();
-    for (const prevItem of prevData) {
-      prevRankMap.set(prevItem.indexId, prevItem.rank);
+    // 按类型分组
+    for (const item of result) {
+      const indexType = item.indexType || INDEX_TYPE.INDICES;
+      if (indexType === INDEX_TYPE.SECTORS) {
+        resultByType[INDEX_TYPE.SECTORS].push(item);
+      } else {
+        resultByType[INDEX_TYPE.INDICES].push(item);
+      }
     }
 
-    result.forEach((item, index) => {
-      const newRank = index + 1;
-      const prevRank = prevRankMap.get(item.indexId);
-      // 重新计算rankChange：正数表示排名上升，负数表示下降
-      item.rankChange = prevRank !== undefined ? prevRank - newRank : 0;
-      item.rank = newRank;
-    });
+    // 9. 按类型分别排序、计算排名和排名变化
+    const finalResult: (TrendAnalysis & {
+      isTodayData: boolean;
+      actualDataDate: Date;
+      prevDeviationRate: number | null;
+    })[] = [];
 
-    return result;
+    // 构建前一个交易日排名的映射（按类型分别存储）
+    const prevRankMapByType = {
+      [INDEX_TYPE.INDICES]: new Map<string, number>(),
+      [INDEX_TYPE.SECTORS]: new Map<string, number>(),
+    };
+
+    for (const prevItem of prevData) {
+      const indexType = prevItem.indexType || INDEX_TYPE.INDICES;
+      prevRankMapByType[indexType].set(prevItem.indexId, prevItem.rank);
+    }
+
+    // 对每种类型分别处理
+    for (const indexType of [INDEX_TYPE.INDICES, INDEX_TYPE.SECTORS]) {
+      const typeResult = resultByType[indexType];
+      if (typeResult.length === 0) continue;
+
+      // 按偏离率倒序排序
+      typeResult.sort((a, b) => (b.deviationRate || 0) - (a.deviationRate || 0));
+
+      // 重新赋值排名和排名变化
+      typeResult.forEach((item, index) => {
+        const newRank = index + 1;
+        const prevRank = prevRankMapByType[indexType].get(item.indexId);
+        // 重新计算rankChange：正数表示排名上升，负数表示下降
+        item.rankChange = prevRank !== undefined ? prevRank - newRank : 0;
+        item.rank = newRank;
+      });
+
+      finalResult.push(...typeResult);
+    }
+
+    return finalResult;
   }
 
   /**
@@ -1447,21 +1601,47 @@ export class TrendAnalysisService {
       results.forEach((r) => allDates.add(this.formatDate(r.tradeDate)));
     }
 
-    // 7. 对每个日期计算排名和排序变化
-    const finalResults: TrendAnalysisResult[] = [];
-    // 用于存储每个指数前一天的排名（内存中计算，避免查询数据库）
-    const previousRanks = new Map<string, number>();
+    // 7. 按指数类型分组（核心指数 vs 行业指数）
+    const indicesByType = new Map<string, Index>();
+    for (const index of indicesToCalculate) {
+      indicesByType.set(index.id, index);
+    }
 
-    // 初始化前一天的排名（从数据库获取）
+    // 8. 对每个日期计算排名和排序变化（按类型分别计算）
+    const finalResults: TrendAnalysisResult[] = [];
+    // 用于存储每个指数前一天的排名（按类型分别存储）
+    const previousRanksByType = {
+      [INDEX_TYPE.INDICES]: new Map<string, number>(),
+      [INDEX_TYPE.SECTORS]: new Map<string, number>(),
+    };
+
+    // 初始化前一天的排名（从数据库获取，按类型分别初始化）
     for (const [indexId, prevTrend] of prevDayTrendData.entries()) {
-      previousRanks.set(indexId, prevTrend.rank);
+      const index = indicesByType.get(indexId);
+      if (index) {
+        const indexType = index.metadata?.type || INDEX_TYPE.INDICES;
+        previousRanksByType[indexType].set(indexId, prevTrend.rank);
+      }
     }
 
     for (const dateStr of Array.from(allDates).sort()) {
       const date = new Date(dateStr);
 
-      // 计算该日期的排名
-      const rankings = this.calculateRankings(allTrendResults, date);
+      // 按类型分别计算排名
+      const rankingsByType = {
+        [INDEX_TYPE.INDICES]: this.calculateRankingsByType(
+          allTrendResults,
+          date,
+          INDEX_TYPE.INDICES,
+          indicesByType,
+        ),
+        [INDEX_TYPE.SECTORS]: this.calculateRankingsByType(
+          allTrendResults,
+          date,
+          INDEX_TYPE.SECTORS,
+          indicesByType,
+        ),
+      };
 
       // 更新每个指数在该日期的排名和排序变化
       for (const [indexId, results] of allTrendResults.entries()) {
@@ -1469,13 +1649,18 @@ export class TrendAnalysisService {
           (r) => this.formatDate(r.tradeDate) === dateStr,
         );
         if (result) {
-          const rank = rankings.get(indexId) || 0;
-          // 从内存中获取前一天的排名计算变化
-          const prevRank = previousRanks.get(indexId);
+          const index = indicesByType.get(indexId);
+          const indexType = index?.metadata?.type || INDEX_TYPE.INDICES;
+          
+          // 获取该类型内的排名
+          const rank = rankingsByType[indexType].get(indexId) || 0;
+          
+          // 从该类型的前一天排名计算变化
+          const prevRank = previousRanksByType[indexType].get(indexId);
           const rankChange = prevRank !== undefined ? prevRank - rank : 0;
 
           // 保存当前排名供下一天使用
-          previousRanks.set(indexId, rank);
+          previousRanksByType[indexType].set(indexId, rank);
 
           finalResults.push({
             ...result,
