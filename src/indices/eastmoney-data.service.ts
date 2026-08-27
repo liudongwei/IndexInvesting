@@ -14,21 +14,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 import * as https from 'https';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 
-const execAsync = promisify(exec);
 
-// 尝试导入 TLS 指纹模拟库
-let impersonate: any = null;
-let Browser: any = null;
-try {
-  const curlImpersonate = require('@wengo/node-libcurl-impersonate-ja3');
-  impersonate = curlImpersonate.impersonate;
-  Browser = curlImpersonate.Browser;
-} catch (e) {
-  // 库未安装，将使用普通HTTP请求
-}
+
 
 /**
  * 全局请求时间控制 - 确保所有东财请求间隔至少3秒
@@ -192,90 +180,7 @@ export class EastmoneyDataService {
   }
 
   /**
-   * 使用 TLS 指纹模拟的请求方法
-   * 模拟 Chrome 浏览器的 TLS 指纹，绕过反爬检测
-   */
-  private async requestWithImpersonate(url: string): Promise<any> {
-    if (!impersonate || !Browser) {
-      throw new Error('@wengo/node-libcurl-impersonate-ja3 库未安装');
-    }
-
-    const curly = impersonate(Browser.Chrome);
-    const headers = this.getEastmoneyHeaders();
-    
-    // 转换 headers 格式
-    const headerArray: string[] = [];
-    for (const [key, value] of Object.entries(headers)) {
-      headerArray.push(`${key}: ${value}`);
-    }
-
-    const response = await curly.get(url, {
-      timeout: 30000,
-      httpHeader: headerArray,
-    });
-
-    // 检查响应状态
-    if (response.statusCode !== 200) {
-      throw new Error(`HTTP ${response.statusCode}: ${response.data}`);
-    }
-
-    // 解析 JSON 响应
-    const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
-    
-    // 检查是否被拦截（返回HTML而不是JSON）
-    if (typeof data === 'string' && data.includes('<html')) {
-      throw new Error('请求被拦截：返回了HTML页面而非JSON数据');
-    }
-
-    return data;
-  }
-
-  /**
-   * 使用系统 curl 命令的请求方法
-   * 作为 TLS 指纹模拟的备选方案
-   */
-  private async requestWithSystemCurl(url: string): Promise<any> {
-    const headers = this.getEastmoneyHeaders();
-    
-    // 构建 curl 命令参数
-    const headerArgs = Object.entries(headers)
-      .map(([key, value]) => `-H "${key}: ${value}"`)
-      .join(' ');
-    
-    // 使用 curl 的 --http1.1 避免 HTTP/2 指纹检测
-    // 使用 -L 跟随重定向
-    // 使用 -s 静默模式
-    // 使用 -m 30 设置超时30秒
-    const command = `curl -s -L --http1.1 -m 30 ${headerArgs} "${url}"`;
-    
-    this.logger.log(`执行系统 curl 命令...`);
-    
-    const { stdout, stderr } = await execAsync(command);
-    
-    if (stderr && !stderr.includes('progress')) {
-      this.logger.warn(`curl 警告: ${stderr}`);
-    }
-    
-    if (!stdout) {
-      throw new Error('curl 返回空响应');
-    }
-    
-    // 检查是否被拦截
-    if (stdout.includes('<html') || stdout.includes('<!DOCTYPE')) {
-      throw new Error('请求被拦截：返回了HTML页面而非JSON数据');
-    }
-    
-    // 解析 JSON
-    try {
-      return JSON.parse(stdout);
-    } catch (e) {
-      throw new Error(`JSON 解析失败: ${stdout.substring(0, 200)}`);
-    }
-  }
-
-  /**
    * 带重试机制的HTTP请求
-   * 请求优先级：1. TLS指纹模拟库 2. 系统curl命令 3. 普通HTTP请求
    * @param url 请求URL
    * @param maxRetries 最大重试次数
    * @param retryDelay 重试延迟基数（毫秒）
@@ -299,32 +204,8 @@ export class EastmoneyDataService {
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
 
-        // 第1次尝试：使用 TLS 指纹模拟库（如果可用）
-        if (impersonate && Browser && attempt === 1) {
-          try {
-            this.logger.log('使用 TLS 指纹模拟库请求...');
-            return await this.requestWithImpersonate(url);
-          } catch (impersonateError) {
-            const errorMsg = impersonateError instanceof Error ? impersonateError.message : String(impersonateError);
-            this.logger.warn(`TLS指纹模拟库失败: ${errorMsg}，尝试系统curl命令`);
-            // 继续尝试系统curl
-          }
-        }
-
-        // 第1次或第2次尝试：使用系统 curl 命令
-        if (attempt <= 2) {
-          try {
-            this.logger.log('使用系统 curl 命令请求...');
-            return await this.requestWithSystemCurl(url);
-          } catch (curlError) {
-            const errorMsg = curlError instanceof Error ? curlError.message : String(curlError);
-            this.logger.warn(`系统curl命令失败: ${errorMsg}，回退到普通HTTP请求`);
-            // 如果系统curl失败，继续下面的普通请求
-          }
-        }
-
-        // 最后尝试：普通HTTP请求
-        this.logger.log('使用普通HTTP请求...');
+        // 使用普通HTTP请求
+        this.logger.log(`使用普通HTTP请求 (第 ${attempt}/${maxRetries} 次)...`);
         
         // 创建新的agent，禁用keep-alive，每次请求使用新连接
         const httpAgent = new http.Agent({ 
@@ -362,7 +243,7 @@ export class EastmoneyDataService {
         if (errorMsg.includes('socket hang up') || 
             errorMsg.includes('ECONNRESET') || 
             errorMsg.includes('被拦截')) {
-          const extraDelay = 8000 + Math.floor(Math.random() * 5000);
+          const extraDelay = 3000 + Math.floor(Math.random() * 3000);
           this.logger.log(`检测到连接问题，额外等待 ${extraDelay}ms...`);
           await new Promise((resolve) => setTimeout(resolve, extraDelay));
         }

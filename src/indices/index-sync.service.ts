@@ -91,7 +91,17 @@ export class IndexSyncService {
         try {
           // 计算该年份需要获取的数据条数（约250个交易日/年）
           const limit = 300; // 留有余量
-          const endDateStr = `${year}-12-31`.replace(/-/g, '');
+          // 如果是当年，endDateStr 定位到当天；否则使用年末日期
+          const currentYear = new Date().getFullYear();
+          let endDateStr: string;
+          if (year === currentYear) {
+            const today = new Date();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            endDateStr = `${year}${month}${day}`;
+          } else {
+            endDateStr = `${year}-12-31`.replace(/-/g, '');
+          }
 
           this.logger.log(
             `[${index.name}] ${year}年使用东财API同步，limit: ${limit}`,
@@ -157,7 +167,7 @@ export class IndexSyncService {
           years.push({ year, count: 0, status: `error: ${error.message}` });
           // 失败后增加额外延迟，避免连续失败
           if (dataSource === 'easymoney' && year < targetEndYear) {
-            const errorDelay = 8000 + Math.floor(Math.random() * 4000);
+            const errorDelay = 4000 + Math.floor(Math.random() * 4000);
             this.logger.log(`同步失败，额外等待 ${errorDelay}ms...`);
             await new Promise((r) => setTimeout(r, errorDelay));
           }
@@ -168,10 +178,21 @@ export class IndexSyncService {
       for (let year = startYear; year <= targetEndYear; year++) {
         try {
           // 获取该年数据
+          // 如果是当年，endDate 定位到当天；否则使用年末日期
+          const currentYear = new Date().getFullYear();
+          let endDate: string;
+          if (year === currentYear) {
+            const today = new Date();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            endDate = `${year}-${month}-${day}`;
+          } else {
+            endDate = `${year}-12-31`;
+          }
           const yearData = await this.indexDataService.getTencentKlineByDateRange(
             index.code,
             `${year}-01-01`,
-            `${year}-12-31`,
+            endDate,
             1000,
           );
 
@@ -210,9 +231,17 @@ export class IndexSyncService {
     if (totalCount > 0) {
       const lastYear = years.filter((y) => y.count > 0).pop();
       if (lastYear) {
+        // 如果是当年，使用当天日期；否则使用年末日期
+        const currentYear = new Date().getFullYear();
+        let lastSyncDate: Date;
+        if (lastYear.year === currentYear) {
+          lastSyncDate = new Date();
+        } else {
+          lastSyncDate = new Date(`${lastYear.year}-12-31`);
+        }
         await this.indicesService.updateLastSyncDate(
           index.id,
-          new Date(`${lastYear.year}-12-31`),
+          lastSyncDate,
           totalCount,
         );
       }
