@@ -185,6 +185,123 @@ export class IndicesController {
     };
   }
 
+  @Get('history/by-code/default')
+  @ApiOperation({
+    summary: '获取默认指数（上证指数）历史数据',
+    description: '默认返回上证指数(sh000001)的历史数据，用于admin/history页面默认展示',
+  })
+  async getDefaultHistory(@Query('limit') limit: string = '100') {
+    // 默认使用上证指数代码
+    const defaultCode = 'sh000001';
+    const index = await this.indicesService.findByCode(defaultCode);
+
+    if (!index) {
+      return {
+        success: false,
+        message: '默认指数（上证指数）不存在',
+      };
+    }
+
+    const history = await this.indicesService.getHistoryByIndexId(index.id, parseInt(limit, 10));
+    return {
+      success: true,
+      index: {
+        id: index.id,
+        code: index.code,
+        name: index.name,
+        officialCode: index.officialCode,
+      },
+      count: history.length,
+      data: history,
+    };
+  }
+
+  @Get('history/by-code/:code')
+  @ApiOperation({ summary: '根据指数代码获取历史数据' })
+  async getHistoryByCode(@Param('code') code: string, @Query('limit') limit: string = '100') {
+    const index = await this.indicesService.findByCode(code);
+
+    if (!index) {
+      return {
+        success: false,
+        message: `指数不存在: ${code}`,
+      };
+    }
+
+    const history = await this.indicesService.getHistoryByIndexId(index.id, parseInt(limit, 10));
+    return {
+      success: true,
+      index: {
+        id: index.id,
+        code: index.code,
+        name: index.name,
+        officialCode: index.officialCode,
+      },
+      count: history.length,
+      data: history,
+    };
+  }
+
+  @Delete(':id/history/:historyId')
+  @ApiOperation({
+    summary: '删除单条历史数据',
+    description: '删除指定ID的历史数据记录，用于处理同步不准确的数据',
+  })
+  async deleteHistoryItem(@Param('id') id: string, @Param('historyId') historyId: string) {
+    // 验证指数存在
+    await this.indicesService.findOne(id);
+
+    // 删除历史数据
+    const result = await this.indicesService.deleteHistoryById(historyId, id);
+
+    if (result) {
+      return {
+        success: true,
+        message: '历史数据删除成功',
+      };
+    } else {
+      return {
+        success: false,
+        message: '历史数据不存在或已删除',
+      };
+    }
+  }
+
+  @Delete(':id/history')
+  @ApiOperation({
+    summary: '按日期范围删除历史数据',
+    description: '删除指定日期范围内的历史数据，用于批量清理不准确的数据。日期格式：YYYY-MM-DD',
+  })
+  async deleteHistoryByDateRange(
+    @Param('id') id: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    // 验证指数存在
+    await this.indicesService.findOne(id);
+
+    // 验证日期格式
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
+      return {
+        success: false,
+        message: '日期格式错误，请使用 YYYY-MM-DD 格式',
+      };
+    }
+
+    const count = await this.indicesService.deleteHistoryByDateRange(
+      id,
+      new Date(startDate),
+      new Date(endDate),
+    );
+
+    return {
+      success: true,
+      message: `成功删除 ${count} 条历史数据`,
+      deletedCount: count,
+    };
+  }
+
   @Post(':id/sync')
   @ApiOperation({ summary: '手动同步指数数据' })
   async syncData(@Param('id') id: string) {

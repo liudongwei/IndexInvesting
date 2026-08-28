@@ -204,6 +204,20 @@ export class IndicesService {
   }
 
   /**
+   * 删除单条历史数据
+   * @param historyId 历史数据ID
+   * @param indexId 指数ID（用于验证）
+   * @returns 是否删除成功
+   */
+  async deleteHistoryById(historyId: string, indexId: string): Promise<boolean> {
+    const result = await this.historyRepository.delete({
+      id: historyId,
+      indexId,
+    });
+    return (result.affected || 0) > 0;
+  }
+
+  /**
    * 更新单个指数的metadata
    * @param id 指数ID
    * @param metadata 要更新的元数据

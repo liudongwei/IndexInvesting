@@ -237,12 +237,12 @@ function AdminLayout() {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* 侧边栏 */}
-      <aside className="w-64 bg-white shadow-sm border-r border-gray-200">
+      <aside className="w-64 bg-white shadow-sm border-r border-gray-200 flex flex-col">
         <div className="p-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">管理后台</h2>
           <p className="text-xs text-gray-500 mt-1">系统配置与数据管理</p>
         </div>
-        <nav className="p-2">
+        <nav className="p-2 flex-1">
           {menuItems.map((item) => (
             <button
               key={item.path}
@@ -258,6 +258,19 @@ function AdminLayout() {
             </button>
           ))}
         </nav>
+        {/* 跳转到前端页面 */}
+        <div className="p-4 border-t border-gray-200">
+          <button
+            onClick={() => navigate('/')}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+            title="返回前端展示页面"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            返回前端页面
+          </button>
+        </div>
       </aside>
 
       {/* 内容区域 */}

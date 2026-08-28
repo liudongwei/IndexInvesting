@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { IndexHistoryItem } from '../types/history';
 import type { IndexItem } from '../types/index';
-import { getIndexHistory, getIndices } from '../services/api';
+import { getIndexHistory, getIndices, deleteHistoryItem } from '../services/api';
 
 // 简易K线图组件
 function MiniKLine({ data }: { data: IndexHistoryItem[] }) {
@@ -96,6 +96,7 @@ export function IndexHistory() {
   const [loading, setLoading] = useState(false);
   const [indicesLoading, setIndicesLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // 日期范围
   const [startDate, setStartDate] = useState<string>('');
@@ -156,6 +157,26 @@ export function IndexHistory() {
       setHistoryData([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 删除单条历史数据
+  const handleDelete = async (historyId: string) => {
+    if (!selectedIndexId) return;
+
+    if (!confirm('确定要删除这条历史数据吗？删除后需要重新同步才能恢复。')) {
+      return;
+    }
+
+    setDeletingId(historyId);
+    try {
+      await deleteHistoryItem(selectedIndexId, historyId);
+      // 删除成功后刷新列表
+      await loadHistory();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除失败');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -432,6 +453,9 @@ export function IndexHistory() {
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         成交额
                       </th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        操作
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -511,6 +535,16 @@ export function IndexHistory() {
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-600">
                               {formatVolume(item.turnover)}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
+                              <button
+                                onClick={() => handleDelete(item.id)}
+                                disabled={deletingId === item.id}
+                                className="text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                title="删除此条数据"
+                              >
+                                {deletingId === item.id ? '删除中...' : '🗑️'}
+                              </button>
                             </td>
                           </tr>
                         );

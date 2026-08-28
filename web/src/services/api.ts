@@ -259,6 +259,45 @@ export async function getIndexHistory(
 }
 
 /**
+ * 删除单条历史数据
+ */
+export async function deleteHistoryItem(
+  indexId: string,
+  historyId: string,
+): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(
+    `${API_BASE_URL}/indices/${encodeURIComponent(indexId)}/history/${encodeURIComponent(historyId)}`,
+    {
+      method: 'DELETE',
+    },
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `删除失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 按日期范围删除历史数据
+ */
+export async function deleteHistoryByDateRange(
+  indexId: string,
+  startDate: string,
+  endDate: string,
+): Promise<{ success: boolean; message: string; deletedCount: number }> {
+  const url = `${API_BASE_URL}/indices/${encodeURIComponent(indexId)}/history?startDate=${startDate}&endDate=${endDate}`;
+  const response = await fetch(url, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `删除失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
  * 获取所有 Cron 配置
  */
 export async function getCronConfigs(): Promise<CronConfig[]> {
