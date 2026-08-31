@@ -125,18 +125,22 @@ export class IndicesService {
 
   async getHistoryByIndexId(
     indexId: string,
-    limit: number = 100,
+    limit?: number,
   ): Promise<IndexHistory[]> {
-    // 验证 UUID 格式
+    // 验证 UUID 格式 (8-4-4-4-12)
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(indexId)) {
       throw new NotFoundException(`无效的指数ID格式: ${indexId}`);
     }
-    return this.historyRepository.find({
+    const findOptions: any = {
       where: { indexId },
       order: { tradeDate: 'DESC' },
-      take: limit,
-    });
+    };
+    // 只有当 limit 有值且大于 0 时才限制条数
+    if (limit && limit > 0) {
+      findOptions.take = limit;
+    }
+    return this.historyRepository.find(findOptions);
   }
 
   async getLatestHistoryDate(indexId: string): Promise<Date | null> {

@@ -101,7 +101,12 @@ export function IndexHistory() {
   // 日期范围
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
-  const [limit, setLimit] = useState<number>(100);
+  // 获取所有数据，不限制条数（后端当 limit 为 0 时返回所有数据）
+  const limit = 0;
+
+  // 分页
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(20);
 
   // 加载指数列表
   useEffect(() => {
@@ -186,6 +191,22 @@ export function IndexHistory() {
       loadHistory();
     }
   }, [selectedIndexId]);
+
+  // 当查询条件变化时重置分页
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedIndexId, startDate, endDate]);
+
+  // 分页数据
+  const paginatedData = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return historyData.slice(startIndex, startIndex + pageSize);
+  }, [historyData, currentPage, pageSize]);
+
+  // 总页数
+  const totalPages = useMemo(() => {
+    return Math.ceil(historyData.length / pageSize);
+  }, [historyData.length, pageSize]);
 
   // 格式化日期
   const formatDate = (dateStr: string) => {
@@ -342,22 +363,6 @@ export function IndexHistory() {
               />
             </div>
 
-            {/* 数据条数 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">显示条数</label>
-              <select
-                value={limit}
-                onChange={(e) => setLimit(Number(e.target.value))}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value={30}>最近30条</option>
-                <option value={50}>最近50条</option>
-                <option value={100}>最近100条</option>
-                <option value={200}>最近200条</option>
-                <option value={500}>最近500条</option>
-              </select>
-            </div>
-
             {/* 查询按钮 */}
             <div className="flex items-end">
               <button
@@ -475,7 +480,7 @@ export function IndexHistory() {
                         </td>
                       </tr>
                     ) : (
-                      historyData.map((item) => {
+                      paginatedData.map((item) => {
                         const changePercentNum =
                           typeof item.changePercent === 'string'
                             ? parseFloat(item.changePercent)
@@ -553,6 +558,67 @@ export function IndexHistory() {
                   </tbody>
                 </table>
               </div>
+
+              {/* 分页控件 */}
+              {historyData.length > 0 && (
+                <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                  <div className="text-sm text-gray-500">
+                    共 {historyData.length} 条数据，第 {currentPage}/{totalPages} 页
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* 每页条数选择 */}
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value={10}>10条/页</option>
+                      <option value={20}>20条/页</option>
+                      <option value={50}>50条/页</option>
+                      <option value={100}>100条/页</option>
+                    </select>
+
+                    {/* 分页按钮 */}
+                    <button
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1 border border-gray-300 rounded text-sm bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      首页
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1 border border-gray-300 rounded text-sm bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      上一页
+                    </button>
+
+                    {/* 页码显示 */}
+                    <span className="px-3 py-1 text-sm text-gray-600">
+                      {currentPage} / {totalPages}
+                    </span>
+
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1 border border-gray-300 rounded text-sm bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      下一页
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1 border border-gray-300 rounded text-sm bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      末页
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}

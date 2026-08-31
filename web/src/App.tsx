@@ -237,9 +237,9 @@ function AdminLayout() {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* 侧边栏 */}
-      <aside className="w-64 bg-white shadow-sm border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">管理后台</h2>
+      <aside className="w-48 bg-white shadow-sm border-r border-gray-200 flex flex-col">
+        <div className="p-3 border-b border-gray-200">
+          <h2 className="text-base font-semibold text-gray-900">管理后台</h2>
           <p className="text-xs text-gray-500 mt-1">系统配置与数据管理</p>
         </div>
         <nav className="p-2 flex-1">
@@ -247,7 +247,7 @@ function AdminLayout() {
             <button
               key={item.path}
               onClick={() => navigate(item.path)}
-              className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors mb-1 ${
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 ${
                 location.pathname === item.path
                   ? 'bg-blue-50 text-blue-700'
                   : 'text-gray-700 hover:bg-gray-100'
@@ -258,30 +258,37 @@ function AdminLayout() {
             </button>
           ))}
         </nav>
-        {/* 跳转到前端页面 */}
-        <div className="p-4 border-t border-gray-200">
+      </aside>
+
+      {/* 内容区域 */}
+      <div className="flex-1 flex flex-col">
+        {/* 顶部栏 */}
+        <header className="bg-white shadow-sm border-b border-gray-200 px-4 py-2 flex items-center justify-between">
+          <div className="text-sm text-gray-500">
+            {menuItems.find(item => item.path === location.pathname)?.label || '管理后台'}
+          </div>
           <button
             onClick={() => navigate('/')}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+            className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700 transition-colors"
             title="返回前端展示页面"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
             </svg>
-            返回前端页面
+            前端
           </button>
-        </div>
-      </aside>
+        </header>
 
-      {/* 内容区域 */}
-      <div className="flex-1">
-        <Routes>
-          <Route path="indices" element={<IndexManagement />} />
-          <Route path="history" element={<IndexHistory />} />
-          <Route path="moving-averages" element={<div className="p-8 text-gray-500">均线管理功能开发中...</div>} />
-          <Route path="cron-configs" element={<CronConfig />} />
-          <Route path="*" element={<Navigate to="/admin/indices" replace />} />
-        </Routes>
+        {/* 页面内容 */}
+        <div className="flex-1">
+          <Routes>
+            <Route path="indices" element={<IndexManagement />} />
+            <Route path="history" element={<IndexHistory />} />
+            <Route path="moving-averages" element={<div className="p-8 text-gray-500">均线管理功能开发中...</div>} />
+            <Route path="cron-configs" element={<CronConfig />} />
+            <Route path="*" element={<Navigate to="/admin/indices" replace />} />
+          </Routes>
+        </div>
       </div>
     </div>
   );

@@ -315,9 +315,6 @@ export function IndexManagement() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     历史数据
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    元数据
-                  </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     操作
                   </th>
@@ -326,7 +323,7 @@ export function IndexManagement() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
                       <div className="flex items-center justify-center gap-2">
                         <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                         加载中...
@@ -335,7 +332,7 @@ export function IndexManagement() {
                   </tr>
                 ) : filteredIndices.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
                       {searchTerm ? '没有找到匹配的指数' : '暂无数据'}
                     </td>
                   </tr>
@@ -385,11 +382,6 @@ export function IndexManagement() {
                         <span className="text-sm text-gray-600">
                           {item.historyCount || 0} 条
                         </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="text-xs text-gray-600 max-w-xs truncate">
-                          {formatMetadata(item.metadata)}
-                        </div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-right">
                         <div className="flex items-center justify-end gap-2">

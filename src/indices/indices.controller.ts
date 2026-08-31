@@ -113,6 +113,65 @@ export class IndicesController {
     }
   }
 
+  @Get('history/by-code/default')
+  @ApiOperation({
+    summary: '获取默认指数（上证指数）历史数据',
+    description: '默认返回上证指数(sh000001)的历史数据，用于admin/history页面默认展示',
+  })
+  async getDefaultHistory(@Query('limit') limit: string = '100') {
+    // 默认使用上证指数代码
+    const defaultCode = 'sh000001';
+    const index = await this.indicesService.findByCode(defaultCode);
+
+    if (!index) {
+      return {
+        success: false,
+        message: '默认指数（上证指数）不存在',
+      };
+    }
+
+    const limitNum = parseInt(limit, 10);
+    const history = await this.indicesService.getHistoryByIndexId(index.id, limitNum === 0 ? undefined : limitNum);
+    return {
+      success: true,
+      index: {
+        id: index.id,
+        code: index.code,
+        name: index.name,
+        officialCode: index.officialCode,
+      },
+      count: history.length,
+      data: history,
+    };
+  }
+
+  @Get('history/by-code/:code')
+  @ApiOperation({ summary: '根据指数代码获取历史数据' })
+  async getHistoryByCode(@Param('code') code: string, @Query('limit') limit: string = '100') {
+    const index = await this.indicesService.findByCode(code);
+
+    if (!index) {
+      return {
+        success: false,
+        message: `指数不存在: ${code}`,
+      };
+    }
+
+    const limitNum = parseInt(limit, 10);
+    const history = await this.indicesService.getHistoryByIndexId(index.id, limitNum === 0 ? undefined : limitNum);
+    return {
+      success: true,
+      index: {
+        id: index.id,
+        code: index.code,
+        name: index.name,
+        officialCode: index.officialCode,
+      },
+      count: history.length,
+      data: history,
+    };
+  }
+
   @Post('import-eastmoney-json')
   @UsePipes()
   @ApiOperation({
@@ -171,64 +230,9 @@ export class IndicesController {
   @ApiOperation({ summary: '获取指数历史数据' })
   async getHistory(@Param('id') id: string, @Query('limit') limit: string = '100') {
     const index = await this.indicesService.findOne(id);
-    const history = await this.indicesService.getHistoryByIndexId(id, parseInt(limit, 10));
-    return {
-      success: true,
-      index: {
-        id: index.id,
-        code: index.code,
-        name: index.name,
-        officialCode: index.officialCode,
-      },
-      count: history.length,
-      data: history,
-    };
-  }
-
-  @Get('history/by-code/default')
-  @ApiOperation({
-    summary: '获取默认指数（上证指数）历史数据',
-    description: '默认返回上证指数(sh000001)的历史数据，用于admin/history页面默认展示',
-  })
-  async getDefaultHistory(@Query('limit') limit: string = '100') {
-    // 默认使用上证指数代码
-    const defaultCode = 'sh000001';
-    const index = await this.indicesService.findByCode(defaultCode);
-
-    if (!index) {
-      return {
-        success: false,
-        message: '默认指数（上证指数）不存在',
-      };
-    }
-
-    const history = await this.indicesService.getHistoryByIndexId(index.id, parseInt(limit, 10));
-    return {
-      success: true,
-      index: {
-        id: index.id,
-        code: index.code,
-        name: index.name,
-        officialCode: index.officialCode,
-      },
-      count: history.length,
-      data: history,
-    };
-  }
-
-  @Get('history/by-code/:code')
-  @ApiOperation({ summary: '根据指数代码获取历史数据' })
-  async getHistoryByCode(@Param('code') code: string, @Query('limit') limit: string = '100') {
-    const index = await this.indicesService.findByCode(code);
-
-    if (!index) {
-      return {
-        success: false,
-        message: `指数不存在: ${code}`,
-      };
-    }
-
-    const history = await this.indicesService.getHistoryByIndexId(index.id, parseInt(limit, 10));
+    // 当 limit 为 0 时，表示不限制条数，返回所有数据
+    const limitNum = parseInt(limit, 10);
+    const history = await this.indicesService.getHistoryByIndexId(id, limitNum === 0 ? undefined : limitNum);
     return {
       success: true,
       index: {
