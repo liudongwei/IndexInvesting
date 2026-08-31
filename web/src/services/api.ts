@@ -1,8 +1,8 @@
-import type { TrendRankingResponse, TrendRankingByDateResponse, TrendRankingItem, TrendAnalysisItem, TrendAnalysisResponse } from '../types/trend';
+import type { TrendRankingResponse, TrendRankingByDateResponse, TrendRankingItem, TrendAnalysisResponse } from '../types/trend';
 import type { IndexItem, IndexFormData, IndexSyncResult } from '../types/index';
 import type { IndexHistoryResponse } from '../types/history';
 import type { CronConfig } from '../types/cron';
-import type { MovingAverageItem, MovingAverageResponse } from '../types/moving-average';
+import type { MovingAverageResponse } from '../types/moving-average';
 import { INDEX_TYPE, type IndexType } from '../types/index-type';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
