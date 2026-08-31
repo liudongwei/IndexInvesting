@@ -131,7 +131,7 @@ export class IndicesController {
     }
 
     const limitNum = parseInt(limit, 10);
-    const history = await this.indicesService.getHistoryByIndexId(index.id, limitNum === 0 ? undefined : limitNum);
+    const result = await this.indicesService.getHistoryByIndexId(index.id, limitNum === 0 ? undefined : limitNum);
     return {
       success: true,
       index: {
@@ -140,8 +140,9 @@ export class IndicesController {
         name: index.name,
         officialCode: index.officialCode,
       },
-      count: history.length,
-      data: history,
+      total: result.total,
+      count: result.data.length,
+      data: result.data,
     };
   }
 
@@ -158,7 +159,7 @@ export class IndicesController {
     }
 
     const limitNum = parseInt(limit, 10);
-    const history = await this.indicesService.getHistoryByIndexId(index.id, limitNum === 0 ? undefined : limitNum);
+    const result = await this.indicesService.getHistoryByIndexId(index.id, limitNum === 0 ? undefined : limitNum);
     return {
       success: true,
       index: {
@@ -167,8 +168,9 @@ export class IndicesController {
         name: index.name,
         officialCode: index.officialCode,
       },
-      count: history.length,
-      data: history,
+      total: result.total,
+      count: result.data.length,
+      data: result.data,
     };
   }
 
@@ -228,11 +230,25 @@ export class IndicesController {
 
   @Get(':id/history')
   @ApiOperation({ summary: '获取指数历史数据' })
-  async getHistory(@Param('id') id: string, @Query('limit') limit: string = '100') {
+  async getHistory(
+    @Param('id') id: string,
+    @Query('limit') limit: string = '100',
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
     const index = await this.indicesService.findOne(id);
-    // 当 limit 为 0 时，表示不限制条数，返回所有数据
     const limitNum = parseInt(limit, 10);
-    const history = await this.indicesService.getHistoryByIndexId(id, limitNum === 0 ? undefined : limitNum);
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const pageSizeNum = pageSize ? parseInt(pageSize, 10) : undefined;
+
+    // 如果传了 page 和 pageSize，使用分页模式；否则使用 limit 模式
+    const result = await this.indicesService.getHistoryByIndexId(
+      id,
+      limitNum === 0 ? undefined : limitNum,
+      pageNum,
+      pageSizeNum,
+    );
+
     return {
       success: true,
       index: {
@@ -241,8 +257,9 @@ export class IndicesController {
         name: index.name,
         officialCode: index.officialCode,
       },
-      count: history.length,
-      data: history,
+      total: result.total,
+      count: result.data.length,
+      data: result.data,
     };
   }
 

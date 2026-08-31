@@ -126,21 +126,34 @@ export class IndicesService {
   async getHistoryByIndexId(
     indexId: string,
     limit?: number,
-  ): Promise<IndexHistory[]> {
+    page?: number,
+    pageSize?: number,
+  ): Promise<{ data: IndexHistory[]; total: number }> {
     // 验证 UUID 格式 (8-4-4-4-12)
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(indexId)) {
       throw new NotFoundException(`无效的指数ID格式: ${indexId}`);
     }
+
+    // 获取总数
+    const total = await this.historyRepository.count({ where: { indexId } });
+
     const findOptions: any = {
       where: { indexId },
       order: { tradeDate: 'DESC' },
     };
-    // 只有当 limit 有值且大于 0 时才限制条数
-    if (limit && limit > 0) {
+
+    // 分页模式
+    if (page !== undefined && pageSize !== undefined && pageSize > 0) {
+      findOptions.skip = (page - 1) * pageSize;
+      findOptions.take = pageSize;
+    } else if (limit && limit > 0) {
+      // 限制条数模式（向后兼容）
       findOptions.take = limit;
     }
-    return this.historyRepository.find(findOptions);
+
+    const data = await this.historyRepository.find(findOptions);
+    return { data, total };
   }
 
   async getLatestHistoryDate(indexId: string): Promise<Date | null> {

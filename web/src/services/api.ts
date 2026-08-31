@@ -240,16 +240,26 @@ export async function syncIndexData(id: string): Promise<IndexSyncResult> {
 
 /**
  * 获取指数历史交易数据
+ * @param indexId 指数ID
+ * @param limit 限制条数（向后兼容，不传则使用分页）
+ * @param startDate 开始日期
+ * @param endDate 结束日期
+ * @param page 页码（从1开始，启用后端分页）
+ * @param pageSize 每页条数（启用后端分页）
  */
 export async function getIndexHistory(
   indexId: string,
   limit: number = 100,
   startDate?: string,
   endDate?: string,
+  page?: number,
+  pageSize?: number,
 ): Promise<IndexHistoryResponse> {
   let url = `${API_BASE_URL}/indices/${encodeURIComponent(indexId)}/history?limit=${limit}`;
   if (startDate) url += `&startDate=${startDate}`;
   if (endDate) url += `&endDate=${endDate}`;
+  if (page !== undefined) url += `&page=${page}`;
+  if (pageSize !== undefined) url += `&pageSize=${pageSize}`;
 
   const response = await fetch(url);
   if (!response.ok) {

@@ -27,6 +27,7 @@ export interface IndexHistoryResponse {
     officialCode?: string;
   };
   count: number;
+  total: number;
   data: IndexHistoryItem[];
 }
 

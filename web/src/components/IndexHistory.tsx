@@ -3,91 +3,6 @@ import type { IndexHistoryItem } from '../types/history';
 import type { IndexItem } from '../types/index';
 import { getIndexHistory, getIndices, deleteHistoryItem } from '../services/api';
 
-// 简易K线图组件
-function MiniKLine({ data }: { data: IndexHistoryItem[] }) {
-  if (data.length === 0) return null;
-
-  // 过滤有效数据（价格必须大于0），并将价格转换为数字
-  const validData = data
-    .map((d) => ({
-      ...d,
-      openPrice: Number(d.openPrice),
-      highPrice: Number(d.highPrice),
-      lowPrice: Number(d.lowPrice),
-      closePrice: Number(d.closePrice),
-    }))
-    .filter(
-      (d) =>
-        !isNaN(d.highPrice) &&
-        !isNaN(d.lowPrice) &&
-        !isNaN(d.openPrice) &&
-        !isNaN(d.closePrice) &&
-        d.highPrice > 0 &&
-        d.lowPrice > 0 &&
-        d.openPrice > 0 &&
-        d.closePrice > 0,
-    );
-  if (validData.length === 0) return null;
-
-  // 计算价格范围
-  const prices = validData.flatMap((d) => [d.highPrice, d.lowPrice]);
-  const minPrice = Math.min(...prices);
-  const maxPrice = Math.max(...prices);
-  const range = maxPrice - minPrice || 1;
-
-  // 取最近30条数据展示
-  const displayData = validData.slice(0, 30).reverse();
-
-  return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-      <h3 className="text-sm font-medium text-gray-700 mb-3">
-        价格走势（最近30个交易日）
-      </h3>
-      <div className="h-40 flex items-end gap-1">
-        {displayData.map((item) => {
-          const isUp = item.closePrice >= item.openPrice;
-          const top = ((maxPrice - item.highPrice) / range) * 100;
-          const height = ((item.highPrice - item.lowPrice) / range) * 100;
-          const bodyTop =
-            ((maxPrice - Math.max(item.openPrice, item.closePrice)) / range) *
-            100;
-          const bodyHeight =
-            (Math.abs(item.closePrice - item.openPrice) / range) * 100 || 2;
-
-          return (
-            <div
-              key={item.id}
-              className="flex-1 flex flex-col items-center relative"
-              title={`${item.tradeDate} 开:${item.openPrice} 收:${item.closePrice} 高:${item.highPrice} 低:${item.lowPrice}`}
-            >
-              {/* 上影线 */}
-              <div
-                className={`absolute w-0.5 ${isUp ? 'bg-red-500' : 'bg-green-500'}`}
-                style={{
-                  top: `${top}%`,
-                  height: `${height}%`,
-                }}
-              />
-              {/* 实体 */}
-              <div
-                className={`absolute w-full max-w-3 ${isUp ? 'bg-red-500' : 'bg-green-500'}`}
-                style={{
-                  top: `${bodyTop}%`,
-                  height: `${Math.max(bodyHeight, 2)}%`,
-                }}
-              />
-            </div>
-          );
-        })}
-      </div>
-      <div className="flex justify-between text-xs text-gray-400 mt-2">
-        <span>{displayData[0]?.tradeDate}</span>
-        <span>{displayData[displayData.length - 1]?.tradeDate}</span>
-      </div>
-    </div>
-  );
-}
-
 export function IndexHistory() {
   const [indices, setIndices] = useState<IndexItem[]>([]);
   const [selectedIndexId, setSelectedIndexId] = useState<string>('');
@@ -98,15 +13,10 @@ export function IndexHistory() {
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // 日期范围
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
-  // 获取所有数据，不限制条数（后端当 limit 为 0 时返回所有数据）
-  const limit = 0;
-
-  // 分页
+  // 分页（后端分页）
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(20);
+  const [total, setTotal] = useState<number>(0);
 
   // 加载指数列表
   useEffect(() => {
@@ -119,6 +29,15 @@ export function IndexHistory() {
     try {
       const data = await getIndices();
       setIndices(data);
+      
+      // 默认选择上证指数（sh000001）
+      const defaultIndex = data.find(index => index.code === 'sh000001');
+      if (defaultIndex) {
+        setSelectedIndexId(defaultIndex.id);
+      } else if (data.length > 0) {
+        // 如果找不到上证指数，默认选择第一个
+        setSelectedIndexId(data[0].id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载指数列表失败');
     } finally {
@@ -126,8 +45,8 @@ export function IndexHistory() {
     }
   };
 
-  // 加载历史数据
-  const loadHistory = async () => {
+  // 加载历史数据（后端分页）
+  const loadHistory = async (page: number = currentPage, size: number = pageSize) => {
     if (!selectedIndexId) return;
 
     setLoading(true);
@@ -135,13 +54,16 @@ export function IndexHistory() {
     try {
       const response = await getIndexHistory(
         selectedIndexId,
-        limit,
-        startDate || undefined,
-        endDate || undefined
+        0, // limit 设为 0，使用分页参数
+        undefined,
+        undefined,
+        page,
+        size
       );
       // 处理 API 响应，确保数据存在
       const historyList = response.data || [];
       setHistoryData(historyList);
+      setTotal(response.total || 0);
       if (response.index) {
         setIndexInfo({
           name: response.index.name,
@@ -160,6 +82,7 @@ export function IndexHistory() {
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载历史数据失败');
       setHistoryData([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -176,8 +99,8 @@ export function IndexHistory() {
     setDeletingId(historyId);
     try {
       await deleteHistoryItem(selectedIndexId, historyId);
-      // 删除成功后刷新列表
-      await loadHistory();
+      // 删除成功后刷新当前页
+      await loadHistory(currentPage, pageSize);
     } catch (err) {
       setError(err instanceof Error ? err.message : '删除失败');
     } finally {
@@ -185,28 +108,25 @@ export function IndexHistory() {
     }
   };
 
-  // 当选择指数时自动加载数据
+  // 当选择指数变化时重置分页并加载数据
   useEffect(() => {
     if (selectedIndexId) {
-      loadHistory();
+      setCurrentPage(1);
+      loadHistory(1, pageSize);
     }
   }, [selectedIndexId]);
 
-  // 当查询条件变化时重置分页
+  // 当页码或每页条数变化时加载数据
   useEffect(() => {
-    setCurrentPage(1);
-  }, [selectedIndexId, startDate, endDate]);
-
-  // 分页数据
-  const paginatedData = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return historyData.slice(startIndex, startIndex + pageSize);
-  }, [historyData, currentPage, pageSize]);
+    if (selectedIndexId) {
+      loadHistory(currentPage, pageSize);
+    }
+  }, [currentPage, pageSize]);
 
   // 总页数
   const totalPages = useMemo(() => {
-    return Math.ceil(historyData.length / pageSize);
-  }, [historyData.length, pageSize]);
+    return Math.ceil(total / pageSize);
+  }, [total, pageSize]);
 
   // 格式化日期
   const formatDate = (dateStr: string) => {
@@ -341,32 +261,10 @@ export function IndexHistory() {
               </select>
             </div>
 
-            {/* 开始日期 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">开始日期</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            {/* 结束日期 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">结束日期</label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
             {/* 查询按钮 */}
             <div className="flex items-end">
               <button
-                onClick={loadHistory}
+                onClick={() => loadHistory(1, pageSize)}
                 disabled={!selectedIndexId || loading}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
@@ -422,8 +320,7 @@ export function IndexHistory() {
               </div>
             )}
 
-            {/* 简易K线图 */}
-            {historyData.length > 0 && <MiniKLine data={historyData} />}
+
 
             {/* 数据表格 */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -480,7 +377,7 @@ export function IndexHistory() {
                         </td>
                       </tr>
                     ) : (
-                      paginatedData.map((item) => {
+                      historyData.map((item: IndexHistoryItem) => {
                         const changePercentNum =
                           typeof item.changePercent === 'string'
                             ? parseFloat(item.changePercent)
