@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Query, Body } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Body, Delete } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TrendAnalysisService } from './trend-analysis.service';
 import { IndicesService } from '../indices/indices.service';
@@ -476,20 +476,40 @@ export class TrendAnalysisController {
     @Param('indexId') indexId: string,
     @Query('limit') limit: string = '20',
     @Query('offset') offset: string = '0',
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
-    const [data, total] = await Promise.all([
-      this.trendService.getTrendAnalysisByIndexId(
-        indexId,
-        parseInt(limit, 10),
-        parseInt(offset, 10),
-      ),
-      this.trendService.getTrendAnalysisCount(indexId),
-    ]);
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const pageSizeNum = pageSize ? parseInt(pageSize, 10) : undefined;
+    
+    const result = await this.trendService.getTrendAnalysisByIndexId(
+      indexId,
+      parseInt(limit, 10),
+      parseInt(offset, 10),
+      pageNum,
+      pageSizeNum,
+    );
     return {
       success: true,
-      count: data.length,
-      total,
-      data,
+      count: result.data.length,
+      total: result.total,
+      data: result.data,
+    };
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: '删除单条趋势分析数据' })
+  async deleteTrend(@Param('id') id: string) {
+    const result = await this.trendService.deleteTrendById(id);
+    if (result) {
+      return {
+        success: true,
+        message: '趋势分析数据删除成功',
+      };
+    }
+    return {
+      success: false,
+      message: '趋势分析数据不存在或已删除',
     };
   }
 

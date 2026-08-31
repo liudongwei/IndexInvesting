@@ -1,4 +1,4 @@
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, LessThanOrEqual, Between, Raw } from 'typeorm';
 import { TrendAnalysis } from './entities/trend-analysis.entity';
@@ -926,19 +926,43 @@ export class TrendAnalysisService {
   }
 
   /**
-   * 获取指定指数的趋势分析数据
+   * 获取指定指数的趋势分析数据（支持分页）
    */
   async getTrendAnalysisByIndexId(
     indexId: string,
     limit: number = 100,
     offset: number = 0,
-  ): Promise<TrendAnalysis[]> {
-    return this.trendRepository.find({
+    page?: number,
+    pageSize?: number,
+  ): Promise<{ data: TrendAnalysis[]; total: number }> {
+    // 获取总数
+    const total = await this.trendRepository.count({ where: { indexId } });
+
+    const findOptions: any = {
       where: { indexId },
       order: { tradeDate: 'DESC' },
-      take: limit,
-      skip: offset,
-    });
+    };
+
+    // 分页模式
+    if (page !== undefined && pageSize !== undefined && pageSize > 0) {
+      findOptions.skip = (page - 1) * pageSize;
+      findOptions.take = pageSize;
+    } else {
+      // 限制条数模式（向后兼容）
+      findOptions.take = limit;
+      findOptions.skip = offset;
+    }
+
+    const data = await this.trendRepository.find(findOptions);
+    return { data, total };
+  }
+
+  /**
+   * 删除单条趋势分析数据
+   */
+  async deleteTrendById(id: string): Promise<boolean> {
+    const result = await this.trendRepository.delete(id);
+    return (result.affected || 0) > 0;
   }
 
   /**

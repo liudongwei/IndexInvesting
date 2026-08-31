@@ -1,7 +1,8 @@
-import type { TrendRankingResponse, TrendRankingByDateResponse, TrendRankingItem } from '../types/trend';
+import type { TrendRankingResponse, TrendRankingByDateResponse, TrendRankingItem, TrendAnalysisItem, TrendAnalysisResponse } from '../types/trend';
 import type { IndexItem, IndexFormData, IndexSyncResult } from '../types/index';
 import type { IndexHistoryResponse } from '../types/history';
 import type { CronConfig } from '../types/cron';
+import type { MovingAverageItem, MovingAverageResponse } from '../types/moving-average';
 import { INDEX_TYPE, type IndexType } from '../types/index-type';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
@@ -376,6 +377,75 @@ export async function getCronJobStatus(
   const response = await fetch(`${API_BASE_URL}/admin/cron-configs/${taskName}/status`);
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 获取指数的MA数据
+ */
+export async function getMovingAverages(
+  indexId: string,
+  limit: number = 100,
+  page?: number,
+  pageSize?: number,
+): Promise<MovingAverageResponse> {
+  let url = `${API_BASE_URL}/moving-averages/${encodeURIComponent(indexId)}?limit=${limit}`;
+  if (page !== undefined) url += `&page=${page}`;
+  if (pageSize !== undefined) url += `&pageSize=${pageSize}`;
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 删除单条MA数据
+ */
+export async function deleteMovingAverage(id: string): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/moving-averages/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `删除失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 获取指数的趋势分析数据
+ */
+export async function getTrendAnalysis(
+  indexId: string,
+  limit: number = 20,
+  offset: number = 0,
+  page?: number,
+  pageSize?: number,
+): Promise<TrendAnalysisResponse> {
+  let url = `${API_BASE_URL}/trend-analysis/${encodeURIComponent(indexId)}?limit=${limit}&offset=${offset}`;
+  if (page !== undefined) url += `&page=${page}`;
+  if (pageSize !== undefined) url += `&pageSize=${pageSize}`;
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 删除单条趋势分析数据
+ */
+export async function deleteTrendAnalysis(id: string): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/trend-analysis/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `删除失败: ${response.status}`);
   }
   return response.json();
 }

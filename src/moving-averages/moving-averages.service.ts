@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { MovingAverage } from './entities/moving-average.entity';
@@ -696,17 +696,41 @@ export class MovingAveragesService {
   }
 
   /**
-   * 获取指数的MA数据
+   * 获取指数的MA数据（支持分页）
    */
   async getMADataByIndexId(
     indexId: string,
     limit: number = 100,
-  ): Promise<MovingAverage[]> {
-    return this.maRepository.find({
+    page?: number,
+    pageSize?: number,
+  ): Promise<{ data: MovingAverage[]; total: number }> {
+    // 获取总数
+    const total = await this.maRepository.count({ where: { indexId } });
+
+    const findOptions: any = {
       where: { indexId },
       order: { tradeDate: 'DESC' },
-      take: limit,
-    });
+    };
+
+    // 分页模式
+    if (page !== undefined && pageSize !== undefined && pageSize > 0) {
+      findOptions.skip = (page - 1) * pageSize;
+      findOptions.take = pageSize;
+    } else if (limit && limit > 0) {
+      // 限制条数模式（向后兼容）
+      findOptions.take = limit;
+    }
+
+    const data = await this.maRepository.find(findOptions);
+    return { data, total };
+  }
+
+  /**
+   * 删除单条MA数据
+   */
+  async deleteMAById(id: string): Promise<boolean> {
+    const result = await this.maRepository.delete(id);
+    return (result.affected || 0) > 0;
   }
 
   /**

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Delete } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { MovingAveragesService } from './moving-averages.service';
 import { IndicesService } from '../indices/indices.service';
@@ -180,15 +180,39 @@ export class MovingAveragesController {
   async getMAData(
     @Param('indexId') indexId: string,
     @Query('limit') limit: string = '100',
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
-    const data = await this.maService.getMADataByIndexId(
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const pageSizeNum = pageSize ? parseInt(pageSize, 10) : undefined;
+    
+    const result = await this.maService.getMADataByIndexId(
       indexId,
       parseInt(limit, 10),
+      pageNum,
+      pageSizeNum,
     );
     return {
       success: true,
-      count: data.length,
-      data,
+      total: result.total,
+      count: result.data.length,
+      data: result.data,
+    };
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: '删除单条MA数据' })
+  async deleteMA(@Param('id') id: string) {
+    const result = await this.maService.deleteMAById(id);
+    if (result) {
+      return {
+        success: true,
+        message: 'MA数据删除成功',
+      };
+    }
+    return {
+      success: false,
+      message: 'MA数据不存在或已删除',
     };
   }
 }

@@ -5,6 +5,8 @@ import { EastmoneyImport } from './components/EastmoneyImport';
 import { IndexDetail } from './components/IndexDetail';
 import { IndexManagement } from './components/IndexManagement';
 import { IndexHistory } from './components/IndexHistory';
+import { MovingAverageManagement } from './components/MovingAverageManagement';
+import { TrendAnalysisManagement } from './components/TrendAnalysisManagement';
 import { CronConfig } from './components/CronConfig';
 import { getLatestRanking, getRankingByDate } from './services/api';
 import type { TrendRankingItem } from './types/trend';
@@ -231,6 +233,7 @@ function AdminLayout() {
     { path: '/admin/indices', label: '指数管理', icon: '📊' },
     { path: '/admin/history', label: '历史数据', icon: '📜' },
     { path: '/admin/moving-averages', label: '均线管理', icon: '📈' },
+    { path: '/admin/trend-analysis', label: '趋势分析', icon: '📉' },
     { path: '/admin/cron-configs', label: '定时任务', icon: '⏰' },
   ];
 
@@ -284,7 +287,8 @@ function AdminLayout() {
           <Routes>
             <Route path="indices" element={<IndexManagement />} />
             <Route path="history" element={<IndexHistory />} />
-            <Route path="moving-averages" element={<div className="p-8 text-gray-500">均线管理功能开发中...</div>} />
+            <Route path="moving-averages" element={<MovingAverageManagement />} />
+            <Route path="trend-analysis" element={<TrendAnalysisManagement />} />
             <Route path="cron-configs" element={<CronConfig />} />
             <Route path="*" element={<Navigate to="/admin/indices" replace />} />
           </Routes>

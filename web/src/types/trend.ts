@@ -34,3 +34,30 @@ export interface TrendRankingByDateResponse {
   data: TrendRankingItem[];
   message?: string;
 }
+
+// 趋势分析数据项（用于管理页面）
+export interface TrendAnalysisItem {
+  id: string;
+  indexId: string;
+  tradeDate: string;
+  closePrice: number | string;
+  ma20: number | string | null;
+  changePercent: number | string | null;
+  deviationRate: number | string | null;
+  volumeRatio: number | string | null;
+  trendStatus: 'above' | 'below';
+  statusChangeDate: string | null;
+  intervalChangePercent: number | string | null;
+  rank: number;
+  rankChange: number;
+  totalRankCount: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TrendAnalysisResponse {
+  success: boolean;
+  total: number;
+  count: number;
+  data: TrendAnalysisItem[];
+}
