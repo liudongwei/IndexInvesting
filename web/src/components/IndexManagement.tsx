@@ -180,19 +180,6 @@ export function IndexManagement() {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   };
 
-  // 格式化元数据
-  const formatMetadata = (metadata: Record<string, any> | null | undefined) => {
-    if (!metadata || Object.keys(metadata).length === 0) return '-';
-    const entries = Object.entries(metadata).slice(0, 3);
-    const text = entries.map(([k, v]) => `${k}: ${v}`).join(', ');
-    const hasMore = Object.keys(metadata).length > 3;
-    return (
-      <span title={JSON.stringify(metadata, null, 2)} className="cursor-help">
-        {text}{hasMore ? '...' : ''}
-      </span>
-    );
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 页面头部 */}
