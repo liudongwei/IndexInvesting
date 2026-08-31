@@ -1232,8 +1232,10 @@ export class IndexSyncService {
         results.push({ name: index.name, count });
         totalCount += count;
 
-        // 添加延迟，避免请求过快
-        await new Promise((r) => setTimeout(r, 1500));
+        // 添加随机延迟（3-6秒），避免请求过快
+        const delay = 3000 + Math.floor(Math.random() * 3000);
+        this.logger.log(`等待 ${delay}ms 后继续下一个指数的同步...`);
+        await new Promise((r) => setTimeout(r, delay));
       } catch (error) {
         this.logger.error(`同步 ${index.name} 失败: ${error.message}`);
         results.push({ name: index.name, count: 0 });
