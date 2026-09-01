@@ -53,6 +53,12 @@ export interface TrendAnalysisItem {
   totalRankCount: number;
   createdAt?: string;
   updatedAt?: string;
+  index?: {
+    id: string;
+    code: string;
+    name: string;
+    officialCode?: string;
+  };
 }
 
 export interface TrendAnalysisResponse {

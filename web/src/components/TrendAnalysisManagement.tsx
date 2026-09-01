@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { TrendAnalysisItem } from '../types/trend';
 import type { IndexItem } from '../types/index';
-import { getTrendAnalysis, getIndices, deleteTrendAnalysis } from '../services/api';
+import { getIndices, deleteTrendAnalysis, queryTrendAnalysis } from '../services/api';
 
 export function TrendAnalysisManagement() {
   const [indices, setIndices] = useState<IndexItem[]>([]);
@@ -18,6 +18,12 @@ export function TrendAnalysisManagement() {
   const [pageSize, setPageSize] = useState<number>(20);
   const [total, setTotal] = useState<number>(0);
 
+  // 日期查询条件（改为单日期）
+  const [tradeDate, setTradeDate] = useState<string>('');
+  
+  // 按偏离率排序
+  const [sortByDeviation, setSortByDeviation] = useState<boolean>(false);
+
   // 加载指数列表
   useEffect(() => {
     loadIndices();
@@ -28,14 +34,20 @@ export function TrendAnalysisManagement() {
     setError(null);
     try {
       const data = await getIndices();
-      setIndices(data);
+      // 过滤掉不参与趋势排名的指数（metadata.calcTrend=0）
+      const trendIndices = data.filter((index) => {
+        const calcTrend = index.metadata?.calcTrend;
+        // calcTrend=1 或未设置时显示，calcTrend=0 时隐藏
+        return calcTrend === 1 || calcTrend === undefined || calcTrend === null;
+      });
+      setIndices(trendIndices);
       
       // 默认选择上证指数（sh000001）
-      const defaultIndex = data.find(index => index.code === 'sh000001');
+      const defaultIndex = trendIndices.find(index => index.code === 'sh000001');
       if (defaultIndex) {
         setSelectedIndexId(defaultIndex.id);
-      } else if (data.length > 0) {
-        setSelectedIndexId(data[0].id);
+      } else if (trendIndices.length > 0) {
+        setSelectedIndexId(trendIndices[0].id);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载指数列表失败');
@@ -44,25 +56,25 @@ export function TrendAnalysisManagement() {
     }
   };
 
-  // 加载趋势分析数据（后端分页）
+  // 加载趋势分析数据（使用新API，支持多条件查询）
   const loadTrendData = async (page: number = currentPage, size: number = pageSize) => {
-    if (!selectedIndexId) return;
-
     setLoading(true);
     setError(null);
     try {
-      const response = await getTrendAnalysis(
-        selectedIndexId,
-        0,
-        0,
+      const response = await queryTrendAnalysis({
+        indexId: selectedIndexId || undefined,
+        tradeDate: tradeDate || undefined,
         page,
-        size
-      );
+        pageSize: size,
+        sortByDeviation: sortByDeviation || undefined,
+      });
+      
       const dataList = response.data || [];
       setTrendData(dataList);
       setTotal(response.total || 0);
       
-      if (response.success && indices.length > 0) {
+      // 如果选择了单个指数，设置indexInfo
+      if (selectedIndexId && indices.length > 0) {
         const selectedIndex = indices.find((i) => i.id === selectedIndexId);
         if (selectedIndex) {
           setIndexInfo({
@@ -70,6 +82,8 @@ export function TrendAnalysisManagement() {
             code: selectedIndex.code,
           });
         }
+      } else {
+        setIndexInfo(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载趋势分析数据失败');
@@ -97,19 +111,15 @@ export function TrendAnalysisManagement() {
     }
   };
 
-  // 当选择指数变化时重置分页并加载数据
+  // 当选择指数或日期变化时重置分页并加载数据
   useEffect(() => {
-    if (selectedIndexId) {
-      setCurrentPage(1);
-      loadTrendData(1, pageSize);
-    }
-  }, [selectedIndexId]);
+    setCurrentPage(1);
+    loadTrendData(1, pageSize);
+  }, [selectedIndexId, tradeDate, sortByDeviation]);
 
   // 当页码或每页条数变化时加载数据
   useEffect(() => {
-    if (selectedIndexId) {
-      loadTrendData(currentPage, pageSize);
-    }
+    loadTrendData(currentPage, pageSize);
   }, [currentPage, pageSize]);
 
   // 总页数
@@ -163,7 +173,7 @@ export function TrendAnalysisManagement() {
           <div className="flex flex-col lg:flex-row gap-4">
             {/* 指数选择 */}
             <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">选择指数</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">选择指数（可选）</label>
               <select
                 value={selectedIndexId}
                 onChange={(e) => setSelectedIndexId(e.target.value)}
@@ -171,7 +181,7 @@ export function TrendAnalysisManagement() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">
-                  {indicesLoading ? '加载中...' : '请选择指数'}
+                  {indicesLoading ? '加载中...' : '全部指数'}
                 </option>
                 {indices.map((index) => (
                   <option key={index.id} value={index.id}>
@@ -181,17 +191,65 @@ export function TrendAnalysisManagement() {
               </select>
             </div>
 
+            {/* 交易日 */}
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">交易日（可选）</label>
+              <input
+                type="date"
+                value={tradeDate}
+                onChange={(e) => setTradeDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
             {/* 查询按钮 */}
-            <div className="flex items-end">
+            <div className="flex items-end gap-2">
               <button
                 onClick={() => loadTrendData(1, pageSize)}
-                disabled={!selectedIndexId || loading}
+                disabled={loading}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? '加载中...' : '查询'}
+                {loading ? '查询中...' : '查询'}
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedIndexId('');
+                  setTradeDate('');
+                  setSortByDeviation(false);
+                  setCurrentPage(1);
+                  loadTrendData(1, pageSize);
+                }}
+                disabled={loading}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                重置
               </button>
             </div>
           </div>
+          
+          {/* 排序选项 */}
+          <div className="mt-4 flex items-center">
+            <input
+              type="checkbox"
+              id="sortByDeviation"
+              checked={sortByDeviation}
+              onChange={(e) => setSortByDeviation(e.target.checked)}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+            />
+            <label htmlFor="sortByDeviation" className="ml-2 block text-sm text-gray-700">
+              按偏离率从高到低排序
+            </label>
+          </div>
+          
+          {/* 查询提示 */}
+          {(selectedIndexId || tradeDate) && (
+            <div className="mt-3 text-xs text-gray-500">
+              当前查询：
+              {selectedIndexId && <span className="mr-2">指数: {indices.find(i => i.id === selectedIndexId)?.name}</span>}
+              {tradeDate && <span className="mr-2">交易日: {tradeDate}</span>}
+              {!selectedIndexId && !tradeDate && <span>全量数据</span>}
+            </div>
+          )}
         </div>
 
         {/* 错误提示 */}
@@ -202,15 +260,15 @@ export function TrendAnalysisManagement() {
         )}
 
         {/* 数据展示 */}
-        {selectedIndexId && (
+        {(
           <>
             {/* 指数信息卡片 */}
             {indexInfo && (
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="text-xl font-bold text-gray-900">{indexInfo.name}</h2>
-                    <p className="text-sm text-gray-500">代码: {indexInfo.code}</p>
+                    <h2 className="text-xl font-bold text-gray-900">{indexInfo?.name}</h2>
+                    <p className="text-sm text-gray-500">代码: {indexInfo?.code}</p>
                   </div>
                   <div className="text-sm text-gray-500">
                     共 {total} 条趋势分析数据
@@ -227,6 +285,12 @@ export function TrendAnalysisManagement() {
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         日期
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        指数代码
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        指数名称
                       </th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         收盘价
@@ -260,7 +324,7 @@ export function TrendAnalysisManagement() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {loading ? (
                       <tr>
-                        <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={12} className="px-4 py-8 text-center text-gray-500">
                           <div className="flex items-center justify-center gap-2">
                             <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                             加载中...
@@ -269,7 +333,7 @@ export function TrendAnalysisManagement() {
                       </tr>
                     ) : trendData.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={12} className="px-4 py-8 text-center text-gray-500">
                           暂无趋势分析数据
                         </td>
                       </tr>
@@ -288,6 +352,14 @@ export function TrendAnalysisManagement() {
                           <tr key={item.id} className="hover:bg-gray-50">
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                               {formatDate(item.tradeDate)}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm">
+                              <code className="text-gray-700 bg-gray-100 px-2 py-0.5 rounded">
+                                {item.index?.code || '-'}
+                              </code>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                              {item.index?.name || '-'}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-700">
                               {formatNumber(item.closePrice)}
@@ -421,11 +493,11 @@ export function TrendAnalysisManagement() {
         )}
 
         {/* 空状态 */}
-        {!selectedIndexId && !indicesLoading && (
+        {!indicesLoading && trendData.length === 0 && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
             <div className="text-6xl mb-4">📊</div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">选择指数查看趋势分析数据</h3>
-            <p className="text-sm text-gray-500">从上方下拉菜单选择一个指数，查看其趋势分析历史数据</p>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">暂无趋势分析数据</h3>
+            <p className="text-sm text-gray-500">请调整查询条件或检查是否有趋势分析数据</p>
           </div>
         )}
       </main>

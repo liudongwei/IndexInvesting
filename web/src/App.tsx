@@ -8,6 +8,7 @@ import { IndexHistory } from './components/IndexHistory';
 import { MovingAverageManagement } from './components/MovingAverageManagement';
 import { TrendAnalysisManagement } from './components/TrendAnalysisManagement';
 import { CronConfig } from './components/CronConfig';
+import { BatchOperations } from './components/BatchOperations';
 import { getLatestRanking, getRankingByDate } from './services/api';
 import type { TrendRankingItem } from './types/trend';
 import { INDEX_TYPE, type IndexType } from './types/index-type';
@@ -235,6 +236,7 @@ function AdminLayout() {
     { path: '/admin/moving-averages', label: '均线管理', icon: '📈' },
     { path: '/admin/trend-analysis', label: '趋势分析', icon: '📉' },
     { path: '/admin/cron-configs', label: '定时任务', icon: '⏰' },
+    { path: '/admin/batch-operations', label: '批量操作', icon: '🔧' },
   ];
 
   return (
@@ -290,6 +292,7 @@ function AdminLayout() {
             <Route path="moving-averages" element={<MovingAverageManagement />} />
             <Route path="trend-analysis" element={<TrendAnalysisManagement />} />
             <Route path="cron-configs" element={<CronConfig />} />
+            <Route path="batch-operations" element={<BatchOperations />} />
             <Route path="*" element={<Navigate to="/admin/indices" replace />} />
           </Routes>
         </div>

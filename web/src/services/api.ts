@@ -449,3 +449,157 @@ export async function deleteTrendAnalysis(id: string): Promise<{ success: boolea
   }
   return response.json();
 }
+
+/**
+ * 批量重新同步所有指数数据
+ */
+export async function bulkResync(data: {
+  startDate: string;
+  endDate: string;
+  type?: string;
+  onlyActive?: string;
+}): Promise<{ success: boolean; message: string; data?: any }> {
+  const response = await fetch(`${API_BASE_URL}/indices/resync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `批量同步失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 更新东财 Cookie
+ */
+export async function updateEastmoneyCookie(cookie: string): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/indices/eastmoney/cookie`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cookie }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `Cookie更新失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 批量计算所有指数的MA数据
+ */
+export async function calculateAllMA(type?: string): Promise<{
+  success: boolean;
+  total: number;
+  successCount: number;
+  failedCount: number;
+}> {
+  const url = type ? `${API_BASE_URL}/moving-averages/calculate-all?type=${type}` : `${API_BASE_URL}/moving-averages/calculate-all`;
+  const response = await fetch(url, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `MA计算失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 批量重新计算所有指数的最近N个交易日MA数据
+ */
+export async function recalculateRecentAllMA(days: number, type?: string): Promise<{
+  success: boolean;
+  total: number;
+  successCount: number;
+  failedCount: number;
+}> {
+  const url = type 
+    ? `${API_BASE_URL}/moving-averages/recalculate-recent-all?days=${days}&type=${type}`
+    : `${API_BASE_URL}/moving-averages/recalculate-recent-all?days=${days}`;
+  const response = await fetch(url, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `MA重算失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 执行增量趋势分析
+ */
+export async function analyzeIncremental(type?: string): Promise<{
+  success: boolean;
+  count: number;
+}> {
+  const url = type ? `${API_BASE_URL}/trend-analysis/analyze-incremental?type=${type}` : `${API_BASE_URL}/trend-analysis/analyze-incremental`;
+  const response = await fetch(url, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `趋势分析失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 按日期范围重新计算趋势分析
+ */
+export async function recalculateTrend(data: {
+  startDate: string;
+  endDate: string;
+  type?: string;
+}): Promise<{ success: boolean; count: number; message?: string }> {
+  const response = await fetch(`${API_BASE_URL}/trend-analysis/recalculate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `趋势重算失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 多条件查询趋势分析数据（支持分页）
+ * @param indexId 可选，指数ID
+ * @param tradeDate 可选，交易日（精确匹配某一天）
+ * @param page 页码
+ * @param pageSize 每页条数
+ * @param sortByDeviation 可选，是否按偏离率从高到低排序
+ */
+export async function queryTrendAnalysis(params?: {
+  indexId?: string;
+  tradeDate?: string;
+  page?: number;
+  pageSize?: number;
+  sortByDeviation?: boolean;
+}): Promise<{
+  success: boolean;
+  count: number;
+  total: number;
+  data: any[];
+}> {
+  let url = `${API_BASE_URL}/trend-analysis?`;
+  if (params) {
+    if (params.indexId) url += `indexId=${params.indexId}&`;
+    if (params.tradeDate) url += `tradeDate=${params.tradeDate}&`;
+    if (params.page !== undefined) url += `page=${params.page}&`;
+    if (params.pageSize !== undefined) url += `pageSize=${params.pageSize}&`;
+    if (params.sortByDeviation !== undefined) url += `sortByDeviation=${params.sortByDeviation}&`;
+  }
+  
+  const response = await fetch(url);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `查询失败: ${response.status}`);
+  }
+  return response.json();
+}

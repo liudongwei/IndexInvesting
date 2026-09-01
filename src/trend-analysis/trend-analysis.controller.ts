@@ -470,6 +470,46 @@ export class TrendAnalysisController {
     }
   }
 
+  @Get()
+  @ApiOperation({ 
+    summary: '查询趋势分析数据（支持多条件查询）',
+    description: '默认查询全量，可选参数：indexId（指数ID）、tradeDate（交易日）、page、pageSize、sortByDeviation（按偏离率排序）。支持按指数查询、按日期查询或组合查询。按交易日倒序排列。',
+  })
+  async queryTrendAnalysis(
+    @Query('indexId') indexId?: string,
+    @Query('tradeDate') tradeDate?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('sortByDeviation') sortByDeviation?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const pageSizeNum = pageSize ? parseInt(pageSize, 10) : undefined;
+    const sortDeviation = sortByDeviation === 'true';
+    
+    // 验证日期格式
+    if (tradeDate && !/^\d{4}-\d{2}-\d{2}$/.test(tradeDate)) {
+      return {
+        success: false,
+        message: '交易日格式错误，请使用 YYYY-MM-DD 格式',
+      };
+    }
+    
+    const result = await this.trendService.queryTrendAnalysis(
+      indexId,
+      tradeDate,
+      pageNum,
+      pageSizeNum,
+      sortDeviation,
+    );
+    
+    return {
+      success: true,
+      count: result.data.length,
+      total: result.total,
+      data: result.data,
+    };
+  }
+
   @Get(':indexId')
   @ApiOperation({ summary: '获取指定指数的趋势分析历史' })
   async getTrendHistory(
@@ -478,9 +518,25 @@ export class TrendAnalysisController {
     @Query('offset') offset: string = '0',
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
   ) {
     const pageNum = page ? parseInt(page, 10) : undefined;
     const pageSizeNum = pageSize ? parseInt(pageSize, 10) : undefined;
+    
+    // 验证日期格式
+    if (startDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      return {
+        success: false,
+        message: '开始日期格式错误，请使用 YYYY-MM-DD 格式',
+      };
+    }
+    if (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+      return {
+        success: false,
+        message: '结束日期格式错误，请使用 YYYY-MM-DD 格式',
+      };
+    }
     
     const result = await this.trendService.getTrendAnalysisByIndexId(
       indexId,
@@ -488,6 +544,8 @@ export class TrendAnalysisController {
       parseInt(offset, 10),
       pageNum,
       pageSizeNum,
+      startDate,
+      endDate,
     );
     return {
       success: true,

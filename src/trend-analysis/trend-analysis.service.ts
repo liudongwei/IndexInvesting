@@ -926,6 +926,87 @@ export class TrendAnalysisService {
   }
 
   /**
+   * 多条件查询趋势分析数据（支持分页）
+   * @param indexId 可选，指数ID
+   * @param tradeDate 可选，交易日（精确匹配某一天）
+   * @param page 页码
+   * @param pageSize 每页条数
+   * @param sortByDeviation 可选，是否按偏离率从高到低排序
+   */
+  async queryTrendAnalysis(
+    indexId?: string,
+    tradeDate?: string,
+    page?: number,
+    pageSize?: number,
+    sortByDeviation?: boolean,
+  ): Promise<{ data: TrendAnalysis[]; total: number }> {
+    // 构建查询条件
+    const whereConditions: any = {};
+    
+    if (indexId) {
+      whereConditions.indexId = indexId;
+    }
+    
+    if (tradeDate) {
+      // 精确匹配交易日
+      const date = new Date(tradeDate);
+      // 设置为一天的开始
+      date.setHours(0, 0, 0, 0);
+      const nextDay = new Date(date);
+      nextDay.setDate(nextDay.getDate() + 1);
+      
+      whereConditions.tradeDate = Between(date, nextDay);
+    }
+
+    // 获取总数
+    const total = await this.trendRepository.count({ where: whereConditions });
+
+    const findOptions: any = {
+      where: whereConditions,
+      // 如果选择了按偏离率排序，则按偏离率降序；否则按交易日降序
+      order: sortByDeviation 
+        ? { deviationRate: 'DESC', tradeDate: 'DESC' }
+        : { tradeDate: 'DESC' },
+      relations: {
+        index: true,
+      },
+      select: {
+        id: true,
+        tradeDate: true,
+        closePrice: true,
+        ma20: true,
+        changePercent: true,
+        deviationRate: true,
+        volumeRatio: true,
+        trendStatus: true,
+        statusChangeDate: true,
+        intervalChangePercent: true,
+        rank: true,
+        rankChange: true,
+        totalRankCount: true,
+        indexId: true,
+        createdAt: true,
+        updatedAt: true,
+        index: {
+          id: true,
+          code: true,
+          name: true,
+          officialCode: true,
+        },
+      },
+    };
+
+    // 分页模式
+    if (page !== undefined && pageSize !== undefined && pageSize > 0) {
+      findOptions.skip = (page - 1) * pageSize;
+      findOptions.take = pageSize;
+    }
+
+    const data = await this.trendRepository.find(findOptions);
+    return { data, total };
+  }
+
+  /**
    * 获取指定指数的趋势分析数据（支持分页）
    */
   async getTrendAnalysisByIndexId(
@@ -934,12 +1015,28 @@ export class TrendAnalysisService {
     offset: number = 0,
     page?: number,
     pageSize?: number,
+    startDate?: string,
+    endDate?: string,
   ): Promise<{ data: TrendAnalysis[]; total: number }> {
+    // 构建查询条件
+    const whereConditions: any = { indexId };
+    
+    // 添加日期范围过滤
+    if (startDate || endDate) {
+      whereConditions.tradeDate = {};
+      if (startDate) {
+        whereConditions.tradeDate.gte = new Date(startDate);
+      }
+      if (endDate) {
+        whereConditions.tradeDate.lte = new Date(endDate);
+      }
+    }
+
     // 获取总数
-    const total = await this.trendRepository.count({ where: { indexId } });
+    const total = await this.trendRepository.count({ where: whereConditions });
 
     const findOptions: any = {
-      where: { indexId },
+      where: whereConditions,
       order: { tradeDate: 'DESC' },
     };
 
