@@ -786,8 +786,10 @@ export class IndexSyncService {
         );
         
         if (isToday) {
+          // 格式化日期字符串用于日志显示（避免时区问题）
+          const dateStr = `${latestDateObj.getFullYear()}-${String(latestDateObj.getMonth() + 1).padStart(2, '0')}-${String(latestDateObj.getDate()).padStart(2, '0')}`;
           this.logger.log(
-            `跳过 ${index.name}：当天数据 (${latestDateObj.toISOString().split('T')[0]}) 已存在，无需同步`,
+            `跳过 ${index.name}：当天数据 (${dateStr}) 已存在，无需同步`,
           );
           return 0;
         }
@@ -1270,8 +1272,10 @@ export class IndexSyncService {
           );
           
           if (isToday) {
+            // 格式化日期字符串用于日志显示（避免时区问题）
+            const dateStr = `${latestDateObj.getFullYear()}-${String(latestDateObj.getMonth() + 1).padStart(2, '0')}-${String(latestDateObj.getDate()).padStart(2, '0')}`;
             this.logger.log(
-              `跳过 ${index.name}：当天数据 (${latestDateObj.toISOString().split('T')[0]}) 已同步`,
+              `跳过 ${index.name}：当天数据 (${dateStr}) 已同步`,
             );
             skippedCount++;
             results.push({ name: index.name, count: 0 });
