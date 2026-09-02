@@ -884,12 +884,111 @@ export class EastmoneyDataService {
   }
 
   /**
+   * 判断指数是否属于贵金属
+   * 贵金属：24小时交易（实际23小时，每天1小时结算休市），周末也交易
+   */
+  private isPreciousMetal(index: Index): boolean {
+    const exchange = index.exchange || '';
+    const code = index.code || '';
+    const name = index.name || '';
+    return (
+      exchange.includes('贵金属') ||
+      exchange.includes('黄金') ||
+      exchange.includes('白银') ||
+      name.includes('黄金') ||
+      name.includes('白银') ||
+      name.includes('XAU') ||
+      name.includes('XAG') ||
+      code.includes('XAU') ||
+      code.includes('XAG')
+    );
+  }
+
+  /**
+   * 判断指数是否属于日本或韩国市场
+   * 日本：14:30收盘（北京时间）
+   * 韩国：14:30收盘（北京时间）
+   */
+  private isJapanKoreaStock(index: Index): boolean {
+    const exchange = index.exchange || '';
+    const code = index.code || '';
+    const name = index.name || '';
+    return (
+      exchange.includes('日本') ||
+      exchange.includes('东京') ||
+      exchange.includes('韩国') ||
+      exchange.includes('首尔') ||
+      name.includes('日经') ||
+      name.includes('韩国') ||
+      name.includes('KOSPI') ||
+      name.includes('N225') ||
+      code.includes('N225') ||
+      code.includes('KS11')
+    );
+  }
+
+  /**
+   * 判断指数是否属于台湾市场
+   * 台湾：13:30收盘（北京时间）
+   */
+  private isTaiwanStock(index: Index): boolean {
+    const exchange = index.exchange || '';
+    const code = index.code || '';
+    const name = index.name || '';
+    return (
+      exchange.includes('台湾') ||
+      exchange.includes('台股') ||
+      name.includes('台湾') ||
+      name.includes('台股') ||
+      name.includes('加权') ||
+      code.includes('TWII')
+    );
+  }
+
+  /**
+   * 生成导入结果消息
+   * @param index 指数实体
+   * @param imported 导入条数
+   * @param total 总条数
+   * @param skippedToday 跳过的当天数据条数
+   * @returns 格式化后的消息
+   */
+  private generateImportMessage(
+    index: Index,
+    imported: number,
+    total: number,
+    skippedToday: number,
+  ): string {
+    const skippedTotal = total - imported;
+    
+    if (skippedToday > 0) {
+      // 根据市场类型给出不同的提示
+      if (this.isPreciousMetal(index)) {
+        return `成功导入 ${imported} 条数据，跳过 ${skippedTotal} 条（其中 ${skippedToday} 条为贵金属当天数据，因23小时连续交易尚未完整）`;
+      } else if (this.isTaiwanStock(index)) {
+        return `成功导入 ${imported} 条数据，跳过 ${skippedTotal} 条（其中 ${skippedToday} 条为台湾市场当天交易未结束，13:30收盘）`;
+      } else if (this.isJapanKoreaStock(index)) {
+        return `成功导入 ${imported} 条数据，跳过 ${skippedTotal} 条（其中 ${skippedToday} 条为日本/韩国市场当天交易未结束，14:30收盘）`;
+      } else {
+        return `成功导入 ${imported} 条数据，跳过 ${skippedTotal} 条（其中 ${skippedToday} 条为A股当天交易未结束，15:00收盘）`;
+      }
+    }
+    
+    return `成功导入 ${imported} 条数据，跳过 ${skippedTotal} 条（已存在）`;
+  }
+
+  /**
    * 检查指定日期是否是当天且交易未结束
-   * A股交易时间：9:30-11:30, 13:00-15:00
+   * 根据不同市场类型采用不同规则：
+   * - 贵金属：23小时连续交易，当天数据始终不完整（需等到次日）
+   * - 台湾：13:30收盘（北京时间），当天13:30前数据不完整
+   * - 日本/韩国：14:30收盘（北京时间），当天14:30前数据不完整
+   * - A股：15:00收盘（北京时间），当天15:00前数据不完整
    * @param tradeDate 交易日期
+   * @param index 指数实体
    * @returns 如果是当天且交易未结束返回true
    */
-  private isTodayAndTradingNotEnded(tradeDate: Date): boolean {
+  private isTodayAndTradingNotEnded(tradeDate: Date, index: Index): boolean {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tradeDay = new Date(
@@ -903,16 +1002,53 @@ export class EastmoneyDataService {
       return false;
     }
 
+    // 贵金属特殊处理：23小时连续交易，当天数据始终不完整
+    if (this.isPreciousMetal(index)) {
+      this.logger.log(
+        `贵金属指数 ${index.name}：跳过当天数据（23小时连续交易，当天数据尚未完整）`,
+      );
+      return true;
+    }
+
     // 获取当前时间（小时和分钟）
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
     const currentTime = currentHour * 60 + currentMinute; // 转换为分钟数
 
-    // A股交易结束时间：15:00 = 15 * 60 = 900 分钟
-    const tradingEndTime = 15 * 60;
+    // 台湾市场：13:30收盘
+    if (this.isTaiwanStock(index)) {
+      const tradingEndTime = 13 * 60 + 30; // 13:30 = 810 分钟
+      if (currentTime < tradingEndTime) {
+        this.logger.log(
+          `台湾指数 ${index.name}：当前时间 ${currentHour}:${String(currentMinute).padStart(2, '0')} 早于收盘时间 13:30，跳过当天数据`,
+        );
+        return true;
+      }
+      return false;
+    }
 
-    // 如果当前时间早于15:00，说明交易未结束
-    return currentTime < tradingEndTime;
+    // 日本/韩国市场：14:30收盘
+    if (this.isJapanKoreaStock(index)) {
+      const tradingEndTime = 14 * 60 + 30; // 14:30 = 870 分钟
+      if (currentTime < tradingEndTime) {
+        this.logger.log(
+          `日本/韩国指数 ${index.name}：当前时间 ${currentHour}:${String(currentMinute).padStart(2, '0')} 早于收盘时间 14:30，跳过当天数据`,
+        );
+        return true;
+      }
+      return false;
+    }
+
+    // A股市场：15:00收盘
+    const tradingEndTime = 15 * 60; // 15:00 = 900 分钟
+    if (currentTime < tradingEndTime) {
+      this.logger.log(
+        `A股指数 ${index.name}：当前时间 ${currentHour}:${String(currentMinute).padStart(2, '0')} 早于收盘时间 15:00，跳过当天数据`,
+      );
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -1006,8 +1142,8 @@ export class EastmoneyDataService {
       for (const klineStr of klines) {
         const parsed = this.parseKlineString(klineStr);
         if (parsed) {
-          // 检查是否是当天且交易未结束
-          if (this.isTodayAndTradingNotEnded(parsed.tradeDate)) {
+          // 检查是否是当天且交易未结束（根据指数类型判断）
+          if (this.isTodayAndTradingNotEnded(parsed.tradeDate, index)) {
             this.logger.log(
               `跳过当天交易未结束的数据: ${parsed.tradeDate.toISOString().split('T')[0]}`,
             );
@@ -1030,10 +1166,21 @@ export class EastmoneyDataService {
       }
 
       if (historyData.length === 0) {
-        const message =
-          skippedTodayCount > 0
-            ? `东财JSON数据中包含 ${skippedTodayCount} 条当天交易未结束的数据，已跳过。无有效数据可导入。`
-            : '东财JSON数据中没有有效的K线数据';
+        let message: string;
+        if (skippedTodayCount > 0) {
+          // 根据指数类型给出不同的提示
+          if (this.isPreciousMetal(index)) {
+            message = `贵金属指数 ${index.name}：JSON数据中包含 ${skippedTodayCount} 条当天数据，因贵金属23小时连续交易（当天数据尚未完整）已跳过。无有效数据可导入。`;
+          } else if (this.isTaiwanStock(index)) {
+            message = `台湾指数 ${index.name}：JSON数据中包含 ${skippedTodayCount} 条当天交易未结束的数据（13:30收盘），已跳过。无有效数据可导入。`;
+          } else if (this.isJapanKoreaStock(index)) {
+            message = `日本/韩国指数 ${index.name}：JSON数据中包含 ${skippedTodayCount} 条当天交易未结束的数据（14:30收盘），已跳过。无有效数据可导入。`;
+          } else {
+            message = `A股指数 ${index.name}：JSON数据中包含 ${skippedTodayCount} 条当天交易未结束的数据（15:00收盘），已跳过。无有效数据可导入。`;
+          }
+        } else {
+          message = '东财JSON数据中没有有效的K线数据';
+        }
         return {
           success: true,
           message,
@@ -1067,7 +1214,12 @@ export class EastmoneyDataService {
 
       const result: ImportJsonResult = {
         success: true,
-        message: `成功导入 ${savedCount} 条数据，跳过 ${klines.length - savedCount} 条（其中 ${skippedTodayCount} 条为当天交易未结束）`,
+        message: this.generateImportMessage(
+          index,
+          savedCount,
+          klines.length,
+          skippedTodayCount,
+        ),
         indexId: index.id,
         indexName: index.name,
         indexCode: index.code,
