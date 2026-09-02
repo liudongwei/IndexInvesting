@@ -771,6 +771,28 @@ export class IndexSyncService {
         index.id,
       );
 
+      // 如果最新数据是今天，跳过同步
+      if (latestDate) {
+        const today = new Date();
+        const latestDateObj = latestDate instanceof Date 
+          ? latestDate 
+          : new Date(latestDate);
+        
+        // 比较日期（只比较年月日）
+        const isToday = (
+          latestDateObj.getFullYear() === today.getFullYear() &&
+          latestDateObj.getMonth() === today.getMonth() &&
+          latestDateObj.getDate() === today.getDate()
+        );
+        
+        if (isToday) {
+          this.logger.log(
+            `跳过 ${index.name}：当天数据 (${latestDateObj.toISOString().split('T')[0]}) 已存在，无需同步`,
+          );
+          return 0;
+        }
+      }
+
       // 计算需要获取的数据条数
       let limit: number;
       if (!latestDate) {
