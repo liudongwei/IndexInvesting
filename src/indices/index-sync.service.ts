@@ -1225,9 +1225,38 @@ export class IndexSyncService {
 
     const results: { name: string; count: number }[] = [];
     let totalCount = 0;
+    let skippedCount = 0; // 跳过的指数数量
 
     for (const index of targetIndices) {
       try {
+        // 检查当天数据是否已同步
+        const latestDate = await this.indicesService.getLatestHistoryDate(
+          index.id,
+        );
+        
+        if (latestDate) {
+          const today = new Date();
+          const latestDateObj = latestDate instanceof Date 
+            ? latestDate 
+            : new Date(latestDate);
+          
+          // 比较日期（只比较年月日）
+          const isToday = (
+            latestDateObj.getFullYear() === today.getFullYear() &&
+            latestDateObj.getMonth() === today.getMonth() &&
+            latestDateObj.getDate() === today.getDate()
+          );
+          
+          if (isToday) {
+            this.logger.log(
+              `跳过 ${index.name}：当天数据 (${latestDateObj.toISOString().split('T')[0]}) 已同步`,
+            );
+            skippedCount++;
+            results.push({ name: index.name, count: 0 });
+            continue; // 跳过API请求
+          }
+        }
+
         const count = await this.syncIndexData(index);
         results.push({ name: index.name, count });
         totalCount += count;
@@ -1242,7 +1271,9 @@ export class IndexSyncService {
       }
     }
 
-    this.logger.log(`${marketName}同步完成，共新增 ${totalCount} 条数据`);
+    this.logger.log(
+      `${marketName}同步完成：跳过 ${skippedCount} 个已同步指数，共新增 ${totalCount} 条数据`,
+    );
 
     // 同步完成后，计算该市场的MA和趋势数据
     if (totalCount > 0 && targetIndices.length > 0) {
