@@ -860,7 +860,7 @@ export class EastmoneyDataService {
 
   /**
    * 根据东财code查找对应的指数
-   * @param eastmoneyCode 东财格式的code，如 0.399001, 1.000300
+   * @param eastmoneyCode 东财格式的code，如 0.399001, 1.000300, 2.931994
    * @returns 指数实体或null
    */
   private async findIndexByEastmoneyCode(
@@ -870,26 +870,11 @@ export class EastmoneyDataService {
     const indices = await this.indexRepository.find();
 
     for (const index of indices) {
-      // 检查metadata中是否配置了东财代码
+      // 检查metadata中是否配置了东财代码（优先精确匹配）
       if (index.metadata?.eastmoneyCode === eastmoneyCode) {
         return index;
       }
-      // 检查code字段是否匹配（去掉前缀后）
-      const indexCodeLower = index.code.toLowerCase();
-      const [marketStr, codeStr] = eastmoneyCode.split('.');
-
-      // 上交所 1.xxx -> shxxx
-      if (marketStr === '1' && indexCodeLower === `sh${codeStr}`) {
-        return index;
-      }
-      // 深交所 0.xxx -> szxxx
-      if (marketStr === '0' && indexCodeLower === `sz${codeStr}`) {
-        return index;
-      }
-      // 北交所 2.xxx -> bjxxx
-      if (marketStr === '2' && indexCodeLower === `bj${codeStr}`) {
-        return index;
-      }
+      // 直接匹配code字段
       if (index.code === eastmoneyCode) {
         return index;
       }

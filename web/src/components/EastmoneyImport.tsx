@@ -47,10 +47,6 @@ export function EastmoneyImport() {
 
   // 提交JSON数据
   const handleSubmit = async () => {
-    if (!selectedIndex) {
-      setResult({ success: false, message: '请先选择一个指数' });
-      return;
-    }
     if (!jsonText.trim()) {
       setResult({ success: false, message: '请输入JSON数据' });
       return;
@@ -63,8 +59,11 @@ export function EastmoneyImport() {
       // 解析JSON
       const jsonData = JSON.parse(jsonText);
 
-      // 提交到后端
-      const response = await importEastmoneyJson(jsonData, selectedIndex.id);
+      // 提交到后端（可选传入indexId，不传则自动识别）
+      const response = await importEastmoneyJson(
+        jsonData,
+        selectedIndex?.id,
+      );
       setResult({
         success: response.success,
         message: response.message,
@@ -182,10 +181,19 @@ export function EastmoneyImport() {
                   <div className="text-xs text-blue-700 mt-1">
                     东财代码：{selectedIndex.eastmoneyCode}
                   </div>
+                  <div className="text-xs text-blue-600 mt-1">
+                    ℹ️ 已指定指数，将直接导入到此指数
+                  </div>
                 </div>
               ) : (
-                <div className="p-3 bg-yellow-50 rounded-lg text-sm text-yellow-800">
-                  请从左侧列表选择一个指数
+                <div className="p-3 bg-green-50 rounded-lg text-sm text-green-800">
+                  <div className="font-medium mb-1">✨ 自动识别模式</div>
+                  <div className="text-xs">
+                    系统将自动从JSON数据中解析 market.code，并匹配对应的指数进行导入。
+                  </div>
+                  <div className="text-xs mt-1 text-green-700">
+                    💡 如需手动指定，请从左侧列表选择指数
+                  </div>
                 </div>
               )}
 
@@ -218,16 +226,16 @@ export function EastmoneyImport() {
               {/* 提交按钮 */}
               <button
                 onClick={handleSubmit}
-                disabled={submitting || !selectedIndex || !jsonText.trim()}
+                disabled={submitting || !jsonText.trim()}
                 className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {submitting
                   ? '提交中...'
-                  : !selectedIndex
-                    ? '请先选择指数'
-                    : !jsonText.trim()
-                      ? '请粘贴JSON数据'
-                      : '提交导入'}
+                  : !jsonText.trim()
+                    ? '请粘贴JSON数据'
+                    : selectedIndex
+                      ? `导入到 ${selectedIndex.name}`
+                      : '自动识别并导入'}
               </button>
 
               {/* 结果提示 */}
@@ -264,6 +272,10 @@ export function EastmoneyImport() {
             <li>
               请确保复制的JSON数据完整，包含 rc/rt/svr/lt/full/dlmkts/dsc/data
               等字段
+            </li>
+            <li className="mt-2 font-medium text-green-700">
+              ✨ 新功能：支持自动识别！无需选择指数，系统会根据JSON中的
+              market.code 自动匹配对应指数
             </li>
           </ul>
         </div>
