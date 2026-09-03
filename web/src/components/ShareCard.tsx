@@ -72,6 +72,7 @@ export const ShareCard = forwardRef<HTMLDivElement, ShareCardProps>(
                 <th className="py-3 px-3 text-left font-semibold text-sm w-64">名称</th>
                 <th className="py-3 px-3 text-right font-semibold text-sm w-24">涨幅%</th>
                 <th className="py-3 px-3 text-right font-semibold text-sm w-24">现价</th>
+                <th className="py-3 px-3 text-right font-semibold text-sm w-24">20日均线</th>
                 <th className="py-3 px-3 text-right font-semibold text-sm w-28">偏离率</th>
                 <th className="py-3 px-3 text-center font-semibold text-sm w-32 whitespace-nowrap">状态转变时间</th>
                 <th className="py-3 px-3 text-right font-semibold text-sm w-28 whitespace-nowrap">区间涨幅%</th>
@@ -122,6 +123,9 @@ export const ShareCard = forwardRef<HTMLDivElement, ShareCardProps>(
                   </td>
                   <td className="py-2.5 px-3 text-right font-mono text-gray-700">
                     {formatNumber(item.closePrice)}
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-mono text-gray-700">
+                    {formatNumber(item.ma20)}
                   </td>
                   <td
                     className="py-2.5 px-3 text-right font-mono font-semibold"
