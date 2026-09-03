@@ -103,15 +103,15 @@ export function RankingTable({ data, loading, onIndexClick }: RankingTableProps)
           <tr>
             <th className="w-12 text-center">排序</th>
             <th className="w-20 text-center">代码</th>
-            <th className="text-left">名称</th>
+            <th className="w-32 text-left">名称</th>
             <th className="w-20 text-right">涨幅%</th>
             <th className="w-20 text-right">现价</th>
             <th className="w-20 text-right">20日均线</th>
             <th className="w-20 text-right">偏离率</th>
             <th className="w-16 text-right">量比</th>
-            <th className="w-24 text-center">状态转变时间</th>
-            <th className="w-20 text-right">区间涨幅%</th>
-            <th className="w-16 text-center">排序变化</th>
+            <th className="w-28 text-center whitespace-nowrap">状态转变时间</th>
+            <th className="w-24 text-right whitespace-nowrap">区间涨幅%</th>
+            <th className="w-20 text-center whitespace-nowrap">排序变化</th>
           </tr>
         </thead>
         <tbody>
@@ -125,8 +125,9 @@ export function RankingTable({ data, loading, onIndexClick }: RankingTableProps)
                 {item.code}
               </td>
               <td 
-                className="font-medium cursor-pointer hover:text-blue-600 hover:underline"
+                className="font-medium cursor-pointer hover:text-blue-600 hover:underline truncate max-w-xs"
                 onClick={() => onIndexClick?.(item)}
+                title={item.name}
               >
                 {item.name}
                 {/* 使用上一交易日数据的指数显示动态脉冲圆环 */}
@@ -143,13 +144,13 @@ export function RankingTable({ data, loading, onIndexClick }: RankingTableProps)
               <td className="text-right font-mono">
                 {item.volumeRatio ? formatNumber(item.volumeRatio, 2) : '-'}
               </td>
-              <td className="text-center text-xs">
+              <td className="text-center text-xs whitespace-nowrap">
                 {formatDate(item.statusChangeDate)}
               </td>
-              <td className="text-right">
+              <td className="text-right whitespace-nowrap">
                 {formatPercent(item.intervalChangePercent)}
               </td>
-              <td className="text-center font-medium text-black">
+              <td className="text-center font-medium text-black whitespace-nowrap">
                 {getRankChangeDisplay(item.rankChange)}
               </td>
             </tr>
