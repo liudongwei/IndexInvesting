@@ -44,6 +44,14 @@ export const ShareCard = forwardRef<HTMLDivElement, ShareCardProps>(
       return rate >= 0 ? 'rgba(252, 165, 165, 0.3)' : 'rgba(134, 239, 172, 0.3)';
     };
 
+    // 判断是否偏离率发生正负转换（需要标黄）
+    // 昨天正今天负，或昨天负今天正
+    const isDeviationChanged = (current: number, prev: number | null | undefined) => {
+      if (prev === null || prev === undefined) return false;
+      // 昨天正今天负，或昨天负今天正
+      return (prev > 0 && current < 0) || (prev < 0 && current > 0);
+    };
+
     // 显示所有数据（不再限制前20条）
     const displayData = data;
 
@@ -129,7 +137,11 @@ export const ShareCard = forwardRef<HTMLDivElement, ShareCardProps>(
                   </td>
                   <td
                     className="py-2.5 px-3 text-right font-mono font-semibold"
-                    style={{ backgroundColor: getDeviationBg(item.deviationRate) }}
+                    style={{ 
+                      backgroundColor: isDeviationChanged(item.deviationRate, item.prevDeviationRate)
+                        ? 'rgba(250, 204, 44, 0.4)' // 醒目的黄色 - 偏离率正负转换
+                        : getDeviationBg(item.deviationRate)
+                    }}
                   >
                     {formatPercent(item.deviationRate)}
                   </td>

@@ -24,6 +24,21 @@ import * as https from 'https';
 let globalLastRequestTime = 0;
 const MIN_REQUEST_INTERVAL = 3500; // 最小请求间隔3.5秒
 
+// IP封禁冷却期管理
+let ipBlockedUntil = 0; // IP被封禁直到某个时间点
+const IP_BLOCK_COOLDOWN = 60000; // IP封禁后冷却60秒
+
+/**
+ * User-Agent 列表，用于轮换避免被识别为爬虫
+ */
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
+];
+
 /**
  * 东财K线数据项
  * 格式: "日期,开盘价,收盘价,最高价,最低价,成交量,成交额,涨跌幅"
@@ -136,7 +151,7 @@ export class EastmoneyDataService {
 
   /**
    * 获取东财请求头
-   * 添加动态请求头以模拟真实浏览器行为
+   * 添加动态请求头以模拟真实浏览器行为，支持 User-Agent 轮换
    */
   private getEastmoneyHeaders(): Record<string, string> {
     const baseHeaders = {
@@ -144,10 +159,13 @@ export class EastmoneyDataService {
       Cookie: this.eastmoneyConfig.cookie,
     };
 
+    // 随机选择 User-Agent，增加请求的多样性
+    const randomUserAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+
     // 添加动态请求头，模拟真实浏览器行为
     return {
       ...baseHeaders,
-      // 添加随机性，避免请求模式过于固定
+      'User-Agent': randomUserAgent, // 使用轮换的 User-Agent
       'Cache-Control': 'no-cache',
       Pragma: 'no-cache',
     };
@@ -180,75 +198,59 @@ export class EastmoneyDataService {
   }
 
   /**
-   * 生成随机的东财push2his域名
-   * 东财提供多个节点：1.push2his.eastmoney.com, 99.push2his.eastmoney.com等
-   * @param useRandom 是否使用随机数，默认false（优先使用基础域名）
-   * @returns 生成的完整域名，如 "push2his.eastmoney.com" 或 "99.push2his.eastmoney.com"
+   * 检查并处理 IP 封禁冷却期
+   * 如果 IP 被封禁，等待冷却期结束
    */
-  private generateRandomPush2HisDomain(useRandom: boolean = false): string {
-    // 如果不使用随机数，返回基础域名
-    if (!useRandom) {
-      return 'push2his.eastmoney.com';
+  private async checkIpBlockCooldown(): Promise<void> {
+    const now = Date.now();
+    if (now < ipBlockedUntil) {
+      const waitTime = ipBlockedUntil - now;
+      this.logger.warn(`检测到 IP 封禁冷却期，等待 ${waitTime}ms (${(waitTime / 1000).toFixed(1)}秒)...`);
+      await new Promise((resolve) => setTimeout(resolve, waitTime));
     }
-    // 随机生成1-99之间的数字
-    const randomNum = Math.floor(Math.random() * 99) + 1;
-    return `${randomNum}.push2his.eastmoney.com`;
   }
 
   /**
-   * 构建带随机节点的东财API URL
-   * @param basePath API路径部分（不含域名）
-   * @param queryParams 查询参数字符串
-   * @param useRandom 是否使用随机数域名，默认false
-   * @returns 完整的URL
+   * 设置 IP 封禁冷却期
    */
-  private buildEastmoneyUrl(basePath: string, queryParams: string, useRandom: boolean = false): string {
-    const domain = this.generateRandomPush2HisDomain(useRandom);
-    return `http://${domain}${basePath}?${queryParams}`;
+  private setIpBlockCooldown(): void {
+    ipBlockedUntil = Date.now() + IP_BLOCK_COOLDOWN;
+    this.logger.warn(`IP 可能被封禁，设置 ${IP_BLOCK_COOLDOWN / 1000}秒 冷却期`);
   }
 
   /**
-   * 带重试机制的HTTP请求（支持域名故障转移）
+   * 带重试机制的HTTP请求
    * @param url 请求URL
    * @param maxRetries 最大重试次数
    * @param retryDelay 重试延迟基数（毫秒）
    */
   private async requestWithRetry(
     url: string,
-    maxRetries: number = 3,
-    retryDelay: number = 2000,
+    maxRetries: number = 5, // 增加最大重试次数从3到5
+    retryDelay: number = 3000, // 增加基础延迟从2000到3000
   ): Promise<any> {
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
+        // 检查 IP 封禁冷却期
+        await this.checkIpBlockCooldown();
+
         // 全局限流检查
         await this.enforceGlobalRateLimit();
 
-        // 每次请求前添加随机延迟（第一次除外）
+        // 计算重试延迟：使用指数退避策略
         if (attempt > 1) {
-          const delay = retryDelay * (attempt - 1) + Math.floor(Math.random() * 1000);
-          this.logger.log(`第 ${attempt} 次尝试，等待 ${delay}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, delay));
+          // 指数退避：第2次3秒，第3次6秒，第4次12秒，第5次24秒
+          const exponentialDelay = retryDelay * Math.pow(2, attempt - 2);
+          const randomJitter = Math.floor(Math.random() * 2000); // 额外随机抖动0-2秒
+          const totalDelay = exponentialDelay + randomJitter;
+          this.logger.log(`第 ${attempt}/${maxRetries} 次尝试，等待 ${totalDelay}ms (指数退避 + 随机抖动)...`);
+          await new Promise((resolve) => setTimeout(resolve, totalDelay));
         }
 
-        // 如果是第一次尝试，使用基础域名；后续重试使用随机域名
-        let requestUrl = url;
-        if (attempt > 1 && url.includes('push2his.eastmoney.com')) {
-          // 解析原URL，提取路径和参数
-          const urlObj = new URL(url);
-          const basePath = urlObj.pathname;
-          const queryParams = urlObj.search.substring(1); // 去掉开头的 '?'
-          requestUrl = this.buildEastmoneyUrl(basePath, queryParams, true); // 重试时使用随机域名
-          this.logger.log(`域名故障转移：从 ${urlObj.hostname} 切换到随机节点...`);
-        } else if (attempt === 1 && url.includes('push2his.eastmoney.com')) {
-          // 第一次尝试时确保使用基础域名
-          const urlObj = new URL(url);
-          const basePath = urlObj.pathname;
-          const queryParams = urlObj.search.substring(1);
-          requestUrl = this.buildEastmoneyUrl(basePath, queryParams, false); // 首次使用基础域名
-          this.logger.log(`首次请求使用基础域名: ${requestUrl}`);
-        }
+        // 使用原始URL，不进行域名切换
+        const requestUrl = url;
 
         // 使用普通HTTP请求
         this.logger.log(`使用普通HTTP请求 (第 ${attempt}/${maxRetries} 次)，URL: ${requestUrl}`);
@@ -274,24 +276,40 @@ export class EastmoneyDataService {
           throw new Error('请求被拦截：返回了HTML页面而非JSON数据');
         }
 
+        // 请求成功，重置冷却期（如果有）
+        if (ipBlockedUntil > Date.now()) {
+          this.logger.log('请求成功，清除 IP 封禁冷却期');
+          ipBlockedUntil = 0;
+        }
+
         return response.data;
       } catch (error) {
         lastError = error as Error;
         const errorMsg = error instanceof Error ? error.message : String(error);
         this.logger.warn(`第 ${attempt}/${maxRetries} 次请求失败: ${errorMsg}`);
 
+        // 检测是否为 IP 封禁错误
+        const isIpBlocked = errorMsg.includes('socket hang up') || 
+                           errorMsg.includes('ECONNRESET') ||
+                           errorMsg.includes('ETIMEDOUT') ||
+                           errorMsg.includes('被拦截');
+
+        // 如果是 IP 封禁错误，设置冷却期
+        if (isIpBlocked) {
+          this.setIpBlockCooldown();
+        }
+
         // 如果是最后一次尝试，抛出错误
         if (attempt === maxRetries) {
+          this.logger.error(`已达到最大重试次数 (${maxRetries}次)，最终错误: ${errorMsg}`);
           break;
         }
 
-        // 针对 socket hang up 或连接重置错误，增加额外延迟
-        if (errorMsg.includes('socket hang up') || 
-            errorMsg.includes('ECONNRESET') || 
-            errorMsg.includes('被拦截')) {
-          const extraDelay = 3000 + Math.floor(Math.random() * 3000);
-          this.logger.log(`检测到连接问题，额外等待 ${extraDelay}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, extraDelay));
+        // 针对严重错误（如 socket hang up），增加更长等待时间
+        if (isIpBlocked) {
+          const severeErrorDelay = 5000 + Math.floor(Math.random() * 5000); // 5-10秒
+          this.logger.log(`检测到严重连接问题(IP封禁?)，额外等待 ${severeErrorDelay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, severeErrorDelay));
         }
       }
     }
@@ -715,7 +733,7 @@ export class EastmoneyDataService {
       // klt=101 日线, fqt=0 不复权
       const basePath = '/api/qt/stock/kline/get';
       const queryParams = `secid=${secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&end=${end}&lmt=${limit}`;
-      const url = this.buildEastmoneyUrl(basePath, queryParams);
+      const url = `http://push2his.eastmoney.com${basePath}?${queryParams}`;
 
       this.logger.log(`从东财API获取 ${symbol} 数据，secid: ${secid}`);
 
@@ -1322,10 +1340,10 @@ export class EastmoneyDataService {
         // 构建东财代码
         let eastmoneyCode = index.code;
 
-        // 构建东财网页URL - 使用随机节点域名
+        // 构建东财网页URL
         const basePath = '/api/qt/stock/kline/get';
         const queryParams = `secid=${eastmoneyCode}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=1&end=20500101&lmt=10`;
-        const eastmoneyUrl = this.buildEastmoneyUrl(basePath, queryParams);
+        const eastmoneyUrl = `http://push2his.eastmoney.com${basePath}?${queryParams}`;
 
         https: return {
           id: index.id,
@@ -1393,10 +1411,10 @@ export class EastmoneyDataService {
     );
 
     try {
-      // 调用东财API - 使用随机节点域名避免IP被封
+      // 调用东财API
       const basePath = '/api/qt/stock/kline/get';
       const queryParams = `secid=${eastmoneyCode}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&end=20500101&lmt=${limit}`;
-      const url = this.buildEastmoneyUrl(basePath, queryParams);
+      const url = `http://push2his.eastmoney.com${basePath}?${queryParams}`;
 
       // 请求前添加随机延迟
       await this.randomDelay(1500, 3000);
