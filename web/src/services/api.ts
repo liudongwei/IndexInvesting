@@ -534,7 +534,7 @@ export async function recalculateRecentAllMA(days: number, type?: string): Promi
  */
 export async function analyzeIncremental(type?: string): Promise<{
   success: boolean;
-  count: number;
+  total: number;
 }> {
   const url = type ? `${API_BASE_URL}/trend-analysis/analyze-incremental?type=${type}` : `${API_BASE_URL}/trend-analysis/analyze-incremental`;
   const response = await fetch(url, {
@@ -554,7 +554,7 @@ export async function recalculateTrend(data: {
   startDate: string;
   endDate: string;
   type?: string;
-}): Promise<{ success: boolean; count: number; message?: string }> {
+}): Promise<{ success: boolean; total: number; message?: string }> {
   const response = await fetch(`${API_BASE_URL}/trend-analysis/recalculate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
