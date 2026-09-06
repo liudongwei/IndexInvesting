@@ -11,6 +11,7 @@ import { IndicesModule } from './indices/indices.module';
 import { MovingAveragesModule } from './moving-averages/moving-averages.module';
 import { TrendAnalysisModule } from './trend-analysis/trend-analysis.module';
 import { CronConfigModule } from './cron-config/cron-config.module';
+import { DynamicTrendModule } from './dynamic-trend/dynamic-trend.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { CronConfigModule } from './cron-config/cron-config.module';
     MovingAveragesModule,
     TrendAnalysisModule,
     CronConfigModule,
+    DynamicTrendModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -603,3 +603,39 @@ export async function queryTrendAnalysis(params?: {
   }
   return response.json();
 }
+
+/**
+ * 获取最新动态趋势数据
+ * @param type 指数类型: 'indices' | 'sectors'
+ */
+export async function getLatestDynamicTrend(type?: IndexType): Promise<{
+  success: boolean;
+  calculationTime: string;
+  totalCount: number;
+  data: any[];
+}> {
+  const indexType = type || INDEX_TYPE.INDICES;
+  const url = `${API_BASE_URL}/dynamic-trend/latest?type=${indexType}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 手动触发动态趋势计算
+ */
+export async function triggerDynamicTrendCalculation(): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const response = await fetch(`${API_BASE_URL}/dynamic-trend/calculate`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `计算失败: ${response.status}`);
+  }
+  return response.json();
+}

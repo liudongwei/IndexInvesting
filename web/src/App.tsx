@@ -10,6 +10,8 @@ import { MovingAverageManagement } from './components/MovingAverageManagement';
 import { TrendAnalysisManagement } from './components/TrendAnalysisManagement';
 import { CronConfig } from './components/CronConfig';
 import { BatchOperations } from './components/BatchOperations';
+import { IndexConfigManagement } from './components/IndexConfigManagement';
+import { DynamicTrendMonitoring } from './components/DynamicTrendMonitoring';
 import { getLatestRanking, getRankingByDate } from './services/api';
 import type { TrendRankingItem } from './types/trend';
 import { INDEX_TYPE, type IndexType } from './types/index-type';
@@ -22,6 +24,7 @@ function Navbar() {
   const isIndexRanking = location.pathname === '/' || location.pathname === '/ranking';
   const isSectorRanking = location.pathname === '/sectors';
   const isEastmoney = location.pathname === '/eastmoney-import';
+  const isDynamicTrend = location.pathname === '/dynamic-trend';
   const isAdmin = location.pathname.startsWith('/admin');
 
   return (
@@ -44,6 +47,14 @@ function Navbar() {
               }`}
             >
               行业指数
+            </button>
+            <button
+              onClick={() => navigate('/dynamic-trend')}
+              className={`text-sm font-medium transition-colors ${
+                isDynamicTrend ? 'text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              动态趋势
             </button>
             <button
               onClick={() => navigate('/eastmoney-import')}
@@ -290,6 +301,7 @@ function AdminLayout() {
     { path: '/admin/history', label: '历史数据', icon: '📜' },
     { path: '/admin/moving-averages', label: '均线管理', icon: '📈' },
     { path: '/admin/trend-analysis', label: '趋势分析', icon: '📉' },
+    { path: '/admin/index-config', label: '指数配置', icon: '⚙️' },
     { path: '/admin/cron-configs', label: '定时任务', icon: '⏰' },
     { path: '/admin/batch-operations', label: '批量操作', icon: '🔧' },
   ];
@@ -346,6 +358,7 @@ function AdminLayout() {
             <Route path="history" element={<IndexHistory />} />
             <Route path="moving-averages" element={<MovingAverageManagement />} />
             <Route path="trend-analysis" element={<TrendAnalysisManagement />} />
+            <Route path="index-config" element={<IndexConfigManagement />} />
             <Route path="cron-configs" element={<CronConfig />} />
             <Route path="batch-operations" element={<BatchOperations />} />
             <Route path="*" element={<Navigate to="/admin/indices" replace />} />
@@ -368,6 +381,7 @@ function AppContent() {
         <Route path="/" element={<RankingPage type={INDEX_TYPE.INDICES} />} />
         <Route path="/ranking" element={<Navigate to="/" replace />} />
         <Route path="/sectors" element={<RankingPage type={INDEX_TYPE.SECTORS} />} />
+        <Route path="/dynamic-trend" element={<DynamicTrendMonitoring />} />
         <Route path="/eastmoney-import" element={<EastmoneyImportPage />} />
         <Route path="/index/:indexId" element={<IndexDetail />} />
         <Route path="/admin/*" element={<AdminLayout />} />

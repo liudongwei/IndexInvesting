@@ -461,6 +461,8 @@ export class MovingAveragesService {
     skipped: number;
     fullCalculated: number;
     incrementalCalculated: number;
+    successCount: number;
+    failedCount: number;
     results: {
       indexName: string;
       calculatedCount: number;
@@ -487,6 +489,8 @@ export class MovingAveragesService {
         skipped: skippedCount,
         fullCalculated: 0,
         incrementalCalculated: 0,
+        successCount: 0,
+        failedCount: 0,
         results: [],
       };
     }
@@ -544,6 +548,8 @@ export class MovingAveragesService {
       skipped: skippedCount,
       fullCalculated: fullCount,
       incrementalCalculated: incrementalCount,
+      successCount: fullCount + incrementalCount, // 成功计算的指数数量
+      failedCount: 0, // 该函数不会捕获错误，所以失败数为0
       results,
     };
   }

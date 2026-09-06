@@ -99,7 +99,8 @@ export function BatchOperations() {
 
     try {
       const response = await calculateAllMA(maType || undefined);
-      setResult(`MA计算完成，成功: ${response.successCount}, 失败: ${response.failedCount}`);
+      const message = `MA计算完成，成功: ${response.successCount} 个指数，失败: ${response.failedCount} 个指数，共计算 ${response.total} 条数据`;
+      setResult(message);
     } catch (err) {
       setError(err instanceof Error ? err.message : '操作失败');
     } finally {
@@ -135,7 +136,7 @@ export function BatchOperations() {
 
     try {
       const response = await analyzeIncremental(trendIncrementalType || undefined);
-      setResult(`增量趋势分析完成，新增/更新: ${response.count} 条数据`);
+      setResult(`增量趋势分析完成，新增/更新: ${response.total} 条数据`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '操作失败');
     } finally {
@@ -159,7 +160,7 @@ export function BatchOperations() {
         endDate: trendRecalculateEndDate,
         type: trendRecalculateType || undefined,
       });
-      setResult(`趋势分析重新计算完成，处理: ${response.count} 条数据`);
+      setResult(`趋势分析重新计算完成，处理: ${response.total} 条数据`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '操作失败');
     } finally {
