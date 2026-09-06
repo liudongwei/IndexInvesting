@@ -20,6 +20,7 @@ export function EastmoneyImport() {
     total?: number;
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [eastmoneyWindow, setEastmoneyWindow] = useState<Window | null>(null); // 东财小窗口
 
   // 加载指数列表
   useEffect(() => {
@@ -40,9 +41,38 @@ export function EastmoneyImport() {
     }
   };
 
-  // 打开东财网页
+  // 打开东财网页（小窗口方式）
   const openEastmoneyPage = (url: string) => {
-    window.open(url, '_blank');
+    // 关闭之前的窗口（如果有）
+    if (eastmoneyWindow && !eastmoneyWindow.closed) {
+      eastmoneyWindow.close();
+    }
+    
+    // 获取屏幕尺寸
+    const screenWidth = window.screen.width;
+    const screenHeight = window.screen.height;
+    
+    // 计算窗口大小（屏幕的 1/8）
+    const windowWidth = Math.floor(screenWidth / 2); // 宽度为屏幕的一半
+    const windowHeight = Math.floor(screenHeight / 4); // 高度为屏幕的 1/4
+    // 总面积约为屏幕的 1/8
+    
+    // 计算右上角位置
+    const left = screenWidth - windowWidth - 50; // 距离右侧 50px
+    const top = 50; // 距离顶部 50px
+    
+    // 打开新的小窗口
+    const newWindow = window.open(
+      url,
+      '东财数据',
+      `width=${windowWidth},height=${windowHeight},left=${left},top=${top},resizable=yes,scrollbars=yes,status=no`
+    );
+    
+    if (newWindow) {
+      setEastmoneyWindow(newWindow);
+    } else {
+      alert('浏览器阻止了弹出窗口，请允许此网站的弹窗权限');
+    }
   };
 
   // 提交JSON数据
