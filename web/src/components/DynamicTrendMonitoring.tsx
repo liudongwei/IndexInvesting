@@ -52,6 +52,12 @@ export function DynamicTrendMonitoring() {
   const [lastUpdateTime, setLastUpdateTime] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  
+  // 根据当前Tab重新排序数据
+  const sortedData = data.map((item, index) => ({
+    ...item,
+    rank: index + 1, // 重新排名，从1开始
+  }));
   const loadData = async () => {
     setLoading(true);
     setError(null);
@@ -269,13 +275,10 @@ export function DynamicTrendMonitoring() {
                     <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                       区间涨幅%
                     </th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      排序变化
-                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {data.map((item) => (
+                  {sortedData.map((item) => (
                     <tr key={item.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 whitespace-nowrap text-center font-medium text-sm text-gray-900">
                         {item.rank}
@@ -287,7 +290,6 @@ export function DynamicTrendMonitoring() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                         {item.index?.name || '-'}
-                        <PulsingDot />
                       </td>
                       <td className={`px-4 py-3 whitespace-nowrap text-sm text-right ${item.changePercent >= 0 ? 'text-red-600' : 'text-green-600'}`}>
                         {formatPercent(item.changePercent)}
@@ -306,9 +308,6 @@ export function DynamicTrendMonitoring() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-700">
                         {formatPercent(item.intervalChangePercent)}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-center font-medium text-black">
-                        {getRankChangeDisplay(item.rankChange)}
                       </td>
                     </tr>
                   ))}
