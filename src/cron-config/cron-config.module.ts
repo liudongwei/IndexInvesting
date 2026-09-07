@@ -7,6 +7,7 @@ import { CronConfig } from './entities/cron-config.entity';
 import { IndicesModule } from '../indices/indices.module';
 import { MovingAveragesModule } from '../moving-averages/moving-averages.module';
 import { TrendAnalysisModule } from '../trend-analysis/trend-analysis.module';
+import { DynamicTrendModule } from '../dynamic-trend/dynamic-trend.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { TrendAnalysisModule } from '../trend-analysis/trend-analysis.module';
     forwardRef(() => IndicesModule),
     forwardRef(() => MovingAveragesModule),
     forwardRef(() => TrendAnalysisModule),
+    forwardRef(() => DynamicTrendModule),
   ],
   controllers: [CronConfigController],
   providers: [CronConfigService],

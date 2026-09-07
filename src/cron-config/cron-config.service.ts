@@ -9,6 +9,7 @@ import { UpdateCronConfigDto } from './dto/update-cron-config.dto';
 import { IndexSyncService } from '../indices/index-sync.service';
 import { MACronService } from '../moving-averages/ma-cron.service';
 import { TrendCronService } from '../trend-analysis/trend-cron.service';
+import { DynamicTrendService } from '../dynamic-trend/dynamic-trend.service';
 
 // 预定义的 Cron 任务配置
 export const DEFAULT_CRON_CONFIGS: Partial<CronConfig>[] = [
@@ -88,9 +89,25 @@ export const DEFAULT_CRON_CONFIGS: Partial<CronConfig>[] = [
     taskName: 'dailyTrendAnalysis',
     cronExpression: '0 7 * * *',
     displayName: '每日趋势分析',
-    description: '每天早上7:00执行趋势分析（增量模式）',
+    description: '每天早上7:00执行趋势分析（增量模式，作为数据同步后的兜底备份）',
     category: '趋势分析',
-    isEnabled: false, // 已改为实时计算，默认禁用
+    isEnabled: true, // 启用作为兜底备份
+  },
+  {
+    taskName: 'dynamicTrendCalculation',
+    cronExpression: '*/10 9-15 * * 1-5',
+    displayName: '动态趋势计算',
+    description: '交易时间内每10分钟执行一次动态趋势计算（工作日9:00-15:00）',
+    category: '动态趋势',
+    isEnabled: true,
+  },
+  {
+    taskName: 'dynamicTrendCleanOldData',
+    cronExpression: '0 0 * * *',
+    displayName: '清理旧动态数据',
+    description: '每天凌晨清理旧的动态趋势数据（保留最近10次）',
+    category: '动态趋势',
+    isEnabled: true,
   },
 ];
 
@@ -105,6 +122,7 @@ export class CronConfigService implements OnModuleInit {
     private indexSyncService: IndexSyncService,
     private maCronService: MACronService,
     private trendCronService: TrendCronService,
+    private dynamicTrendService: DynamicTrendService,
   ) {}
 
   async onModuleInit() {
@@ -213,6 +231,12 @@ export class CronConfigService implements OnModuleInit {
       // 趋势分析任务
       case 'dailyTrendAnalysis':
         return this.trendCronService.handleDailyTrendAnalysis();
+
+      // 动态趋势任务
+      case 'dynamicTrendCalculation':
+        return this.dynamicTrendService.calculateAndRank();
+      case 'dynamicTrendCleanOldData':
+        return this.dynamicTrendService.cleanOldData(10);
 
       default:
         throw new Error(`未知的任务名称: ${taskName}`);

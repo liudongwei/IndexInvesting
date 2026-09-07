@@ -11,8 +11,10 @@ export class DynamicTrendCronService {
   /**
    * 每10分钟执行一次动态趋势计算（交易时间内）
    * 周一至周五的9:30-15:00期间执行
+   * 
+   * 注意：已移至 cron-config 统一管理，此定时任务已禁用
    */
-  @Cron('*/10 9-15 * * 1-5') // 每10分钟，工作日
+  // @Cron('*/10 9-15 * * 1-5') // 每10分钟，工作日
   async handleDynamicTrendCalculation() {
     this.logger.log('开始执行动态趋势计算...');
     try {
@@ -25,8 +27,10 @@ export class DynamicTrendCronService {
 
   /**
    * 每天凌晨清理旧数据（保留最近10次计算的数据）
+   * 
+   * 注意：已移至 cron-config 统一管理，此定时任务已禁用
    */
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  // @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handleCleanOldData() {
     this.logger.log('开始清理旧的动态趋势数据...');
     try {

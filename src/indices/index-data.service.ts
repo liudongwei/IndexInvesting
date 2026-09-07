@@ -13,6 +13,19 @@ export interface KlineData {
   amount: number | null;
 }
 
+export interface RealTimeQuote {
+  symbol: string;
+  name: string; // 股票/指数名称
+  currentPrice: number; // 当前价格
+  open: number; // 今日开盘价
+  yesterdayClose: number; // 昨收价
+  high: number; // 今日最高价
+  low: number; // 今日最低价
+  volume: number; // 成交量（手）
+  amount: number; // 成交额（元）
+  timestamp: Date; // 数据时间戳
+}
+
 export type DataSourceType = 'tencent' | 'sina';
 
 @Injectable()
@@ -266,6 +279,179 @@ export class IndexDataService {
       this.logger.warn('腾讯数据源失败，尝试新浪...');
       const data = await this.getSinaKline(symbol, limit);
       return { data, source: 'sina' };
+    }
+  }
+
+  /**
+   * 从腾讯获取实时行情
+   * @param symbol 股票代码，如 sh000001, sz399001, hk00700
+   * @returns 实时行情数据
+   */
+  async getTencentRealTimeQuote(symbol: string): Promise<RealTimeQuote> {
+    try {
+      // 腾讯实时行情接口
+      const url = `https://qt.gtimg.cn/q=${symbol}`;
+      
+      const response = await firstValueFrom(
+        this.httpService.get(url, {
+          timeout: 10000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            Referer: 'https://gu.qq.com/',
+          },
+        }),
+      );
+
+      // 解析腾讯返回的数据
+      // 格式: v_sh000001="..."; 或 v_sz399001="...";
+      const text = response.data as string;
+      const match = text.match(/="([^"]+)"/);
+      
+      if (!match) {
+        throw new Error(`无法解析腾讯实时数据: ${text}`);
+      }
+
+      const fields = match[1].split('~');
+      
+      // 腾讯实时数据字段说明（根据实际数据验证）
+      // 字段0: 前缀标识(1)
+      // 字段1: 股票/指数名称
+      // 字段2: 代码
+      // 字段3: 当前价格
+      // 字段4: 昨收
+      // 字段5: 今开
+      // 字段6: 成交量（手）
+      // 字段30: 最高价
+      // 字段31: 最低价
+      // 字段32: 成交额（元）
+      
+      const name = fields[1] || '';
+      const currentPrice = parseFloat(fields[3]) || 0;
+      const yesterdayClose = parseFloat(fields[4]) || 0;
+      const open = parseFloat(fields[5]) || 0;
+      const volume = parseFloat(fields[6]) || 0;
+      const high = parseFloat(fields[30]) || 0;
+      const low = parseFloat(fields[31]) || 0;
+      const amount = parseFloat(fields[32]) || 0;
+
+      if (currentPrice === 0) {
+        throw new Error(`获取到的价格为0，可能代码错误或市场未开盘: ${symbol}`);
+      }
+
+      return {
+        symbol,
+        name,
+        currentPrice,
+        open,
+        yesterdayClose,
+        high,
+        low,
+        volume,
+        amount,
+        timestamp: new Date(),
+      };
+    } catch (error) {
+      this.logger.error(`腾讯实时行情获取失败 (${symbol}): ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 从新浪获取实时行情
+   * @param symbol 股票代码，如 sh000001, sz399001
+   * @returns 实时行情数据
+   */
+  async getSinaRealTimeQuote(symbol: string): Promise<RealTimeQuote> {
+    try {
+      // 新浪实时行情接口
+      const url = `http://hq.sinajs.cn/list=${symbol}`;
+      
+      const response = await firstValueFrom(
+        this.httpService.get(url, {
+          timeout: 10000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            Referer: 'https://finance.sina.com.cn/',
+          },
+        }),
+      );
+
+      // 解析新浪返回的数据
+      // 格式: var hq_str_sh000001="...";
+      const text = response.data as string;
+      const match = text.match(/="([^"]+)"/);
+      
+      if (!match) {
+        throw new Error(`无法解析新浪实时数据: ${text}`);
+      }
+
+      const fields = match[1].split(',');
+      
+      // 新浪A股数据字段说明
+      // 字段0: 股票名称
+      // 字段1: 今开
+      // 字段2: 昨收
+      // 字段3: 当前价格
+      // 字段4: 最高
+      // 字段5: 最低
+      // 字段8: 成交量（手）
+      // 字段9: 成交额（元）
+      
+      const name = fields[0] || '';
+      const open = parseFloat(fields[1]) || 0;
+      const yesterdayClose = parseFloat(fields[2]) || 0;
+      const currentPrice = parseFloat(fields[3]) || 0;
+      const high = parseFloat(fields[4]) || 0;
+      const low = parseFloat(fields[5]) || 0;
+      const volume = parseFloat(fields[8]) || 0;
+      const amount = parseFloat(fields[9]) || 0;
+
+      if (currentPrice === 0) {
+        throw new Error(`获取到的价格为0，可能代码错误或市场未开盘: ${symbol}`);
+      }
+
+      return {
+        symbol,
+        name,
+        currentPrice,
+        open,
+        yesterdayClose,
+        high,
+        low,
+        volume,
+        amount,
+        timestamp: new Date(),
+      };
+    } catch (error) {
+      this.logger.error(`新浪实时行情获取失败 (${symbol}): ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取实时行情（支持多数据源）
+   * @param symbol 股票代码
+   * @param source 数据源，默认优先腾讯
+   * @returns 实时行情数据
+   */
+  async getRealTimeQuote(
+    symbol: string,
+    source?: DataSourceType,
+  ): Promise<RealTimeQuote> {
+    // 如果指定了数据源，直接使用
+    if (source === 'tencent') {
+      return this.getTencentRealTimeQuote(symbol);
+    }
+    if (source === 'sina') {
+      return this.getSinaRealTimeQuote(symbol);
+    }
+
+    // 默认：优先腾讯，失败则尝试新浪
+    try {
+      return await this.getTencentRealTimeQuote(symbol);
+    } catch (error) {
+      this.logger.warn('腾讯实时数据源失败，尝试新浪...');
+      return this.getSinaRealTimeQuote(symbol);
     }
   }
 }

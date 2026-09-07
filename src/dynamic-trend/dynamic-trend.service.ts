@@ -5,7 +5,9 @@ import { DynamicTrendData } from './entities/dynamic-trend-data.entity';
 import { Index } from '../indices/entities/index.entity';
 import { IndexHistory } from '../indices/entities/index-history.entity';
 import { MovingAverage } from '../moving-averages/entities/moving-average.entity';
+import { TrendAnalysis } from '../trend-analysis/entities/trend-analysis.entity';
 import { CreateDynamicDeviationDto } from './dto/create-dynamic-deviation.dto';
+import { IndexDataService } from '../indices/index-data.service';
 
 @Injectable()
 export class DynamicTrendService {
@@ -20,6 +22,9 @@ export class DynamicTrendService {
     private readonly indexHistoryRepository: Repository<IndexHistory>,
     @InjectRepository(MovingAverage)
     private readonly movingAverageRepository: Repository<MovingAverage>,
+    @InjectRepository(TrendAnalysis)
+    private readonly trendAnalysisRepository: Repository<TrendAnalysis>,
+    private readonly indexDataService: IndexDataService,
   ) {}
 
   /**
@@ -117,52 +122,159 @@ export class DynamicTrendService {
       // 遍历每个指数，计算相关指标
       for (const index of indices) {
         try {
-          // 获取最新的移动平均线数据
-          const latestMA = await this.movingAverageRepository.findOne({
-            where: { indexId: index.id },
-            order: { tradeDate: 'DESC' },
-          });
-
-          if (!latestMA || !latestMA.ma20) {
-            this.logger.warn(`指数 ${index.name} (${index.code}) 没有可用的MA20数据`);
+          this.logger.log(`[${index.name}] 开始计算动态趋势...`);
+          
+          // 1. 从 API 获取实时行情数据
+          const dataSource = index.metadata?.data_source || 'tencent';
+          let realTimeQuote;
+          
+          try {
+            this.logger.log(`[${index.name}] 正在获取实时行情数据 (数据源: ${dataSource})...`);
+            realTimeQuote = await this.indexDataService.getRealTimeQuote(
+              index.code,
+              dataSource as 'tencent' | 'sina',
+            );
+            this.logger.log(
+              `[${index.name}] 获取实时价格成功: ${realTimeQuote.currentPrice}`,
+            );
+          } catch (error) {
+            this.logger.warn(
+              `[${index.name}] 实时数据获取失败: ${error.message}，跳过`,
+            );
             continue;
           }
 
-          // 获取最新的历史数据（现价）
-          const latestHistory = await this.indexHistoryRepository.findOne({
+          const currentPrice = realTimeQuote.currentPrice;
+          
+          // 2. 重新计算MA20：取前19个交易日 + 当天实时数据，共20个数据点
+          this.logger.log(`[${index.name}] 正在查询最近19个交易日历史数据...`);
+          const recentHistories = await this.indexHistoryRepository.find({
             where: { indexId: index.id },
             order: { tradeDate: 'DESC' },
+            take: 19, // 取最近19个交易日
           });
 
-          if (!latestHistory) {
-            this.logger.warn(`指数 ${index.name} (${index.code}) 没有历史数据`);
+          this.logger.log(
+            `[${index.name}] 查询到 ${recentHistories.length} 条历史记录`,
+          );
+
+          if (recentHistories.length < 19) {
+            this.logger.warn(
+              `[${index.name}] 历史数据不足19天，只有 ${recentHistories.length} 天，跳过`,
+            );
             continue;
           }
 
-          const currentPrice = latestHistory.closePrice;
-          const ma20 = latestMA.ma20;
-          
-          // 计算偏离率
-          const deviationRate = ma20 ? ((currentPrice - ma20) / ma20) * 100 : null;
-          
-          // 获取趋势分析数据以获取状态转变日和区间涨幅
-          const trendAnalysis = await this.dynamicTrendRepository.findOne({
-            where: { 
+          // 打印最近几个交易日的收盘价用于调试
+          this.logger.log(
+            `[${index.name}] 最近3个交易日收盘价: [${recentHistories.slice(0, 3).map(h => `${h.tradeDate}:${h.closePrice}(${typeof h.closePrice})`).join(', ')}]`,
+          );
+
+          // 计算20日均线的平均值（19天历史 + 当天实时）
+          // 【修复】确保使用数值类型进行计算
+          const sumClosePrice = parseFloat(
+            (recentHistories.reduce((sum, h) => sum + Number(h.closePrice), 0) +
+            Number(currentPrice)).toFixed(2)
+          ); // 加上当天的实时价格，保留两位小数
+          const ma20 = sumClosePrice / 20;
+
+          this.logger.log(
+            `[${index.name}] MA20计算完成: 19日总和=${sumClosePrice}, 当前价格=${currentPrice}, MA20=${ma20.toFixed(2)}`,
+          );
+
+          // 3. 计算涨幅：与上一个交易日比较
+          const latestHistory = recentHistories[0]; // 最新的交易日
+          let changePercent = 0;
+          if (latestHistory && latestHistory.closePrice > 0) {
+            changePercent =
+              ((currentPrice - latestHistory.closePrice) /
+                latestHistory.closePrice) *
+              100;
+          }
+
+          // 4. 计算偏离率：(当前价格 - MA20) / MA20 * 100
+          const deviationRate =
+            ma20 !== 0 ? ((currentPrice - ma20) / ma20) * 100 : null;
+
+          // 5. 确定状态转变日
+          // 从趋势分析表中获取小于今天且按交易日期倒序取第一条趋势数据（上一个交易日）
+          this.logger.log(`[${index.name}] 正在查询上一交易日趋势数据...`);
+          const today = new Date();
+          const yesterdayTrends = await this.trendAnalysisRepository.find({
+            where: {
               indexId: index.id,
-              tradeDate: latestHistory.tradeDate,
+              tradeDate: LessThan(today),
             },
-            order: { calculationTime: 'DESC' },
+            order: { tradeDate: 'DESC' },
+            take: 1,
           });
+          const yesterdayTrend = yesterdayTrends[0];
+          
+          if (yesterdayTrend) {
+            this.logger.log(
+              `[${index.name}] 上一交易日(${yesterdayTrend.tradeDate})偏离率: ${yesterdayTrend.deviationRate}`,
+            );
+          } else {
+            this.logger.warn(`[${index.name}] 未找到上一交易日趋势数据`);
+          }
+
+          const yesterdayDeviationRate = yesterdayTrend?.deviationRate;
+          let statusChangeDate: Date | null = null;
+
+          // 判断今天是否发生正负转换
+          if (
+            deviationRate !== null &&
+            yesterdayDeviationRate !== undefined &&
+            yesterdayDeviationRate !== null
+          ) {
+            const wasPositive = yesterdayDeviationRate >= 0;
+            const isPositive = deviationRate >= 0;
+
+            // 如果正负发生变化，标记为今天
+            if (wasPositive !== isPositive) {
+              statusChangeDate = new Date(); // 今天
+            } else {
+              // 否则继承昨天的状态转变日
+              statusChangeDate = yesterdayTrend?.statusChangeDate || null;
+            }
+          } else if (deviationRate !== null) {
+            // 如果没有昨天数据，但有今天的偏离率
+            // 如果是正的，且没有状态转变日，标记为今天
+            if (deviationRate >= 0 && !yesterdayTrend?.statusChangeDate) {
+              statusChangeDate = new Date(); // 今天
+            } else {
+              statusChangeDate = yesterdayTrend?.statusChangeDate || null;
+            }
+          }
+
+          // 6. 计算区间涨幅：从状态转变日到今天的涨幅
+          let intervalChangePercent: number | null = null;
+          if (statusChangeDate) {
+            // 获取状态转变日那天的收盘价
+            const statusDayHistory = await this.indexHistoryRepository.findOne({
+              where: {
+                indexId: index.id,
+                tradeDate: statusChangeDate,
+              },
+            });
+
+            if (statusDayHistory && statusDayHistory.closePrice > 0) {
+              intervalChangePercent =
+                ((currentPrice - statusDayHistory.closePrice) /
+                  statusDayHistory.closePrice) *
+                100;
+            }
+          }
 
           results.push({
             index,
-            tradeDate: latestHistory.tradeDate,
+            tradeDate: new Date(), // 使用当前时间
             currentPrice,
             ma20,
-            changePercent: latestHistory.changePercent || 0,
+            changePercent,
             deviationRate,
-            statusChangeDate: trendAnalysis?.statusChangeDate || null,
-            intervalChangePercent: trendAnalysis?.intervalChangePercent || null,
+            statusChangeDate,
+            intervalChangePercent,
           });
         } catch (error) {
           this.logger.error(`计算指数 ${index.name} 失败:`, error);

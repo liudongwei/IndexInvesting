@@ -20,7 +20,7 @@ export class TrendCronService {
    * 
    * 注意：已改为市场同步后实时计算，此定时任务仅作为兜底备份
    */
-  // @Cron('0 7 * * *')
+  @Cron('0 7 * * *')
   async handleDailyTrendAnalysis() {
     this.logger.log('执行定时趋势分析任务（MA计算已完成，增量模式）...');
     try {
