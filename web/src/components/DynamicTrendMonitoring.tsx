@@ -272,8 +272,11 @@ export function DynamicTrendMonitoring() {
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                       状态转变日
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                       区间涨幅%
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      排名变化
                     </th>
                   </tr>
                 </thead>
@@ -308,6 +311,11 @@ export function DynamicTrendMonitoring() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-700">
                         {formatPercent(item.intervalChangePercent)}
+                      </td>
+                      <td className={`px-4 py-3 whitespace-nowrap text-sm text-center font-medium ${
+                        item.rankChange > 0 ? 'text-red-600' : item.rankChange < 0 ? 'text-green-600' : 'text-gray-600'
+                      }`}>
+                        {getRankChangeDisplay(item.rankChange)}
                       </td>
                     </tr>
                   ))}
