@@ -94,7 +94,7 @@ export class IndicesController {
   @ApiOperation({
     summary: '获取所有配置了东财数据源的指数',
     description:
-      '返回所有metadata.data_source为eastmoney/easymoney或配置了eastmoneyCode的指数列表，包含东财网页链接。',
+      '返回所有metadata.dataSources.eastmoney.enabled为true的指数列表，包含东财网页链接。',
   })
   async getEastmoneyIndices() {
     try {
@@ -181,7 +181,7 @@ export class IndicesController {
     description: `直接提交东财JSON数据对象进行导入。系统会根据market.code自动匹配指数，或可通过indexId手动指定。
 
 匹配规则：
-- 优先匹配metadata.eastmoneyCode字段
+- 优先匹配metadata.dataSources.eastmoney.code字段（需enabled为true）
 - 其次根据code自动匹配：1.xxx→shxxx, 0.xxx→szxxx, 2.xxx→bjxxx
 
 示例数据格式：

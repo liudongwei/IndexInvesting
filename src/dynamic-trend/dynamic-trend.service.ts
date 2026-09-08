@@ -185,14 +185,30 @@ export class DynamicTrendService {
         for (const index of typeIndices) {
           this.logger.log(`[${index.name}] 开始计算动态趋势...`);
           
-          // 1. 从 API 获取实时行情数据
-          const dataSource = index.metadata?.data_source || 'tencent';
+          // 1. 从 metadata.dataSources 中获取启用的数据源
+          const dataSources = index.metadata?.dataSources || {};
+          let selectedSource: 'tencent' | 'sina' = 'tencent'; // 默认腾讯
+          let selectedCode: string = index.code; // 默认使用 index.code
+          
+          // 按优先级检查启用的数据源: eastmoney -> sina -> tencent
+          if (dataSources.eastmoney?.enabled) {
+            selectedSource = 'tencent'; // 东财也使用腾讯API获取实时行情
+            selectedCode = dataSources.eastmoney.code || index.code;
+          } else if (dataSources.sina?.enabled) {
+            selectedSource = 'sina';
+            selectedCode = dataSources.sina.code || index.code;
+          } else if (dataSources.tencent?.enabled) {
+            selectedSource = 'tencent';
+            selectedCode = dataSources.tencent.code || index.code;
+          }
+          
+          const dataSource = selectedSource;
           let realTimeQuote;
           
           try {
-            this.logger.log(`[${index.name}] 正在获取实时行情数据 (数据源: ${dataSource})...`);
+            this.logger.log(`[${index.name}] 正在获取实时行情数据 (数据源: ${dataSource}, 代码: ${selectedCode})...`);
             realTimeQuote = await this.indexDataService.getRealTimeQuote(
-              index.code,
+              selectedCode,
               dataSource as 'tencent' | 'sina',
             );
             this.logger.log(

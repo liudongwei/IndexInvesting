@@ -29,7 +29,7 @@ export class BulkUpdateMetadataDto {
 
   @ApiProperty({
     description: '要更新的元数据对象，会与现有metadata合并',
-    example: { sync_mode: 'api', data_source: 'tushare' },
+    example: { sync_mode: 'api', dataSources: { eastmoney: { enabled: true, code: '1.000300' } } },
   })
   @IsObject()
   metadata: Record<string, any>;

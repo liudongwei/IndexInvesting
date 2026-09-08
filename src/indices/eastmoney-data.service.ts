@@ -936,8 +936,9 @@ export class EastmoneyDataService {
     const indices = await this.indexRepository.find();
 
     for (const index of indices) {
-      // 检查metadata中是否配置了东财代码（优先精确匹配）
-      if (index.metadata?.eastmoneyCode === eastmoneyCode) {
+      // 检查metadata中是否配置了东财代码（优先从 dataSources.eastmoney.code 获取）
+      const dataSources = index.metadata?.dataSources || {};
+      if (dataSources.eastmoney?.enabled && dataSources.eastmoney.code === eastmoneyCode) {
         return index;
       }
       // 直接匹配code字段
@@ -1191,7 +1192,7 @@ export class EastmoneyDataService {
         if (!index) {
           return {
             success: false,
-            message: `未找到匹配的指数: ${eastmoneyCode} (${name})，请在metadata中配置eastmoneyCode或通过indexId指定`,
+            message: `未找到匹配的指数: ${eastmoneyCode} (${name})，请在metadata.dataSources.eastmoney中配置code或通过indexId指定`,
             total: 0,
             imported: 0,
             skipped: 0,
@@ -1335,7 +1336,11 @@ export class EastmoneyDataService {
     });
 
     return indices
-      .filter((index) => index.metadata?.data_source === 'easymoney')
+      .filter((index) => {
+        // 检查是否在 dataSources 中启用了 eastmoney
+        const dataSources = index.metadata?.dataSources || {};
+        return dataSources.eastmoney?.enabled === true;
+      })
       .map((index) => {
         // 构建东财代码
         let eastmoneyCode = index.code;
@@ -1383,8 +1388,12 @@ export class EastmoneyDataService {
       };
     }
 
-    // 获取东财代码
-    let eastmoneyCode = index.metadata?.eastmoneyCode;
+    // 获取东财代码 - 从 dataSources.eastmoney.code 获取
+    let eastmoneyCode: string | undefined;
+    const dataSources = index.metadata?.dataSources || {};
+    if (dataSources.eastmoney?.enabled && dataSources.eastmoney.code) {
+      eastmoneyCode = dataSources.eastmoney.code;
+    }
     if (!eastmoneyCode) {
       const codeLower = index.code.toLowerCase();
       if (codeLower.startsWith('sh')) {
@@ -1399,7 +1408,7 @@ export class EastmoneyDataService {
     if (!eastmoneyCode) {
       return {
         success: false,
-        message: `无法确定东财代码: ${index.code}，请在metadata中配置eastmoneyCode`,
+        message: `无法确定东财代码: ${index.code}，请在metadata.dataSources.eastmoney中配置code`,
         total: 0,
         imported: 0,
         skipped: 0,

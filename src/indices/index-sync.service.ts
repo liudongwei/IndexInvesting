@@ -77,15 +77,36 @@ export class IndexSyncService {
     const years: { year: number; count: number; status: string }[] = [];
     let totalCount = 0;
 
-    // 获取数据源配置
-    const dataSource = metadata.data_source || 'tencent';
-
+    // 从 metadata.dataSources 中查找启用的数据源
+    const dataSources = metadata.dataSources || {};
+    let selectedSource: string | null = null;
+    let selectedCode: string = index.code; // 默认使用 index.code
+    
+    // 按优先级检查启用的数据源: eastmoney -> sina -> tencent
+    if (dataSources.eastmoney?.enabled) {
+      selectedSource = 'eastmoney';
+      selectedCode = dataSources.eastmoney.code || index.code;
+    } else if (dataSources.sina?.enabled) {
+      selectedSource = 'sina';
+      selectedCode = dataSources.sina.code || index.code;
+    } else if (dataSources.tencent?.enabled) {
+      selectedSource = 'tencent';
+      selectedCode = dataSources.tencent.code || index.code;
+    }
+    
+    // 如果没有找到启用的数据源，默认使用腾讯
+    if (!selectedSource) {
+      this.logger.warn(`[${index.name}] 未在 dataSources 中找到启用的数据源，默认使用腾讯`);
+      selectedSource = 'tencent';
+      selectedCode = index.code;
+    }
+    
     this.logger.log(
-      `开始智能同步 ${index.name} (${index.code}) 数据: ${startYear} 至 ${targetEndYear} (sync_mode: ${syncMode}, data_source: ${dataSource})`,
+      `开始智能同步 ${index.name} (${index.code}) 数据: ${startYear} 至 ${targetEndYear} (sync_mode: ${syncMode}, data_source: ${selectedSource}, code: ${selectedCode})`,
     );
 
     // 根据数据源选择不同的同步策略
-    if (dataSource === 'easymoney') {
+    if (selectedSource === 'eastmoney') {
       // 东财API策略：按年份分批获取数据
       for (let year = startYear; year <= targetEndYear; year++) {
         try {
@@ -108,7 +129,7 @@ export class IndexSyncService {
           );
 
           const result = await this.eastmoneyDataService.getKlineFromApi(
-            index.code,
+            selectedCode,
             limit,
             endDateStr,
           );
@@ -140,7 +161,7 @@ export class IndexSyncService {
           }
 
           // 转换并保存数据
-          const historyData = this.convertToHistoryData(yearData, 'easymoney');
+          const historyData = this.convertToHistoryData(yearData, selectedSource);
           const savedCount = await this.indicesService.saveHistoryData(
             index.id,
             historyData,
@@ -156,7 +177,7 @@ export class IndexSyncService {
           // 添加延迟，避免请求过快（东财API需要更长的间隔）
           if (year < targetEndYear) {
             // 东财API需要至少3.5秒的间隔来避免触发反爬
-            const delay = dataSource === 'easymoney' 
+            const delay = selectedSource === 'eastmoney' 
               ? 4000 + Math.floor(Math.random() * 2000)  // 4-6秒随机间隔
               : 1500;
             this.logger.log(`等待 ${delay}ms 后继续下一年的同步...`);
@@ -166,7 +187,7 @@ export class IndexSyncService {
           this.logger.error(`同步 ${year} 年数据失败: ${error.message}`);
           years.push({ year, count: 0, status: `error: ${error.message}` });
           // 失败后增加额外延迟，避免连续失败
-          if (dataSource === 'easymoney' && year < targetEndYear) {
+          if (selectedSource === 'eastmoney' && year < targetEndYear) {
             const errorDelay = 4000 + Math.floor(Math.random() * 4000);
             this.logger.log(`同步失败，额外等待 ${errorDelay}ms...`);
             await new Promise((r) => setTimeout(r, errorDelay));
@@ -190,7 +211,7 @@ export class IndexSyncService {
             endDate = `${year}-12-31`;
           }
           const yearData = await this.indexDataService.getTencentKlineByDateRange(
-            index.code,
+            selectedCode,
             `${year}-01-01`,
             endDate,
             1000,
@@ -513,11 +534,10 @@ export class IndexSyncService {
   /**
    * 按日期范围重新同步数据
    * 用于修复指定日期范围内的数据
-   * 根据 metadata.data_source 选择数据源：
-   * - 'tencent': 腾讯API（默认）
-   * - 'sina': 新浪API
-   * - 'easymoney': 东财API
-   * - 其他/未设置: 腾讯API
+   * 根据 metadata.dataSources 选择启用的数据源：
+   * - dataSources.eastmoney.enabled: 东财API
+   * - dataSources.sina.enabled: 新浪API
+   * - dataSources.tencent.enabled: 腾讯API（默认）
    * @param index 指数对象
    * @param startDate 开始日期，格式 YYYY-MM-DD
    * @param endDate 结束日期，格式 YYYY-MM-DD
@@ -537,11 +557,35 @@ export class IndexSyncService {
     );
 
     try {
-      // 获取数据源配置
-      const dataSource = index.metadata?.data_source || 'tencent';
+      // 从 metadata.dataSources 中查找启用的数据源
+      const dataSources = index.metadata?.dataSources || {};
+      let selectedSource: string | null = null;
+      let selectedCode: string = index.code; // 默认使用 index.code
+      
+      // 按优先级检查启用的数据源: eastmoney -> sina -> tencent
+      if (dataSources.eastmoney?.enabled) {
+        selectedSource = 'eastmoney';
+        selectedCode = dataSources.eastmoney.code || index.code;
+      } else if (dataSources.sina?.enabled) {
+        selectedSource = 'sina';
+        selectedCode = dataSources.sina.code || index.code;
+      } else if (dataSources.tencent?.enabled) {
+        selectedSource = 'tencent';
+        selectedCode = dataSources.tencent.code || index.code;
+      }
+      
+      // 如果没有找到启用的数据源，默认使用腾讯
+      if (!selectedSource) {
+        this.logger.warn(`[${index.name}] 未在 dataSources 中找到启用的数据源，默认使用腾讯`);
+        selectedSource = 'tencent';
+        selectedCode = index.code;
+      }
+      
+      this.logger.log(`[${index.name}] 使用数据源: ${selectedSource}, 代码: ${selectedCode}`);
+      
       let data: KlineData[];
       let source: string;
-
+      
       // 根据日期范围计算合理的limit（考虑交易日约250天/年，加20%缓冲）
       const start = new Date(startDate);
       const end = new Date(endDate);
@@ -551,13 +595,13 @@ export class IndexSyncService {
       const tradingDays = Math.max(Math.ceil(daysDiff * 0.7), 10); // 按70%交易日估算，最少10条
       const limit = Math.ceil(tradingDays * 1.2); // 加20%缓冲
 
-      if (dataSource === 'easymoney') {
+      if (selectedSource === 'eastmoney') {
         // 东财API - 获取足够多的数据，然后过滤日期范围
         this.logger.log(
           `[${index.name}] 使用东财API重新同步，计算limit: ${limit}`,
         );
         const result = await this.eastmoneyDataService.getKlineFromApi(
-          index.code,
+          selectedCode,
           limit,
           endDate.replace(/-/g, ''), // 转换为YYYYMMDD格式
         );
@@ -577,13 +621,13 @@ export class IndexSyncService {
           }))
           .filter((item) => item.date >= startDate && item.date <= endDate);
         source = 'easymoney';
-      } else if (dataSource === 'sina') {
+      } else if (selectedSource === 'sina') {
         // 新浪API - 获取数据后过滤日期范围
         this.logger.log(
           `[${index.name}] 使用新浪API重新同步，计算limit: ${limit}`,
         );
         const sinaData = await this.indexDataService.getSinaKline(
-          index.code,
+          selectedCode,
           limit,
         );
         data = sinaData.filter(
@@ -596,7 +640,7 @@ export class IndexSyncService {
           `[${index.name}] 使用腾讯API重新同步，计算limit: ${limit}`,
         );
         data = await this.indexDataService.getTencentKlineByDateRange(
-          index.code,
+          selectedCode,
           startDate,
           endDate,
           limit,
@@ -753,18 +797,16 @@ export class IndexSyncService {
   /**
    * 同步单个指数数据
    * 首次全量同步，后续增量同步
-   * 根据 index.metadata.data_source 选择数据源：
-   * - 'tencent': 腾讯API（默认）
-   * - 'sina': 新浪API
-   * - 'easymoney': 东财API
-   * - 其他/未设置: 腾讯API优先，失败则尝试新浪
+   * 根据 index.metadata.dataSources 选择启用的数据源：
+   * - dataSources.eastmoney.enabled: 东财API
+   * - dataSources.sina.enabled: 新浪API
+   * - dataSources.tencent.enabled: 腾讯API（默认）
    */
   async syncIndexData(index: Index): Promise<number> {
     this.logger.log(`开始同步指数: ${index.name} (${index.code})`);
 
     try {
-      // 获取数据源配置
-      const dataSource = index.metadata?.data_source || 'tencent';
+      // 数据源配置已从 metadata.dataSources 中获取，无需单独获取 data_source
 
       // 获取最新数据日期
       const latestDate = await this.indicesService.getLatestHistoryDate(
@@ -815,11 +857,38 @@ export class IndexSyncService {
       let data: KlineData[];
       let source: string;
 
-      if (dataSource === 'easymoney') {
+      // 从 metadata.dataSources 中查找启用的数据源
+      const dataSources = index.metadata?.dataSources || {};
+      let selectedSource: string | null = null;
+      let selectedCode: string = index.code; // 默认使用 index.code
+      
+      // 按优先级检查启用的数据源: eastmoney -> sina -> tencent
+      if (dataSources.eastmoney?.enabled) {
+        selectedSource = 'eastmoney';
+        selectedCode = dataSources.eastmoney.code || index.code;
+      } else if (dataSources.sina?.enabled) {
+        selectedSource = 'sina';
+        selectedCode = dataSources.sina.code || index.code;
+      } else if (dataSources.tencent?.enabled) {
+        selectedSource = 'tencent';
+        selectedCode = dataSources.tencent.code || index.code;
+      }
+      
+      // 如果没有找到启用的数据源，默认使用腾讯
+      if (!selectedSource) {
+        this.logger.warn(`[${index.name}] 未在 dataSources 中找到启用的数据源，默认使用腾讯`);
+        selectedSource = 'tencent';
+        selectedCode = index.code;
+      }
+      
+      this.logger.log(`[${index.name}] 使用数据源: ${selectedSource}, 代码: ${selectedCode}`);
+      
+      // 根据选中的数据源调用对应的API
+      if (selectedSource === 'eastmoney') {
         // 东财API
         this.logger.log(`使用东财API同步: ${index.name}`);
         const result = await this.eastmoneyDataService.getKlineFromApi(
-          index.code,
+          selectedCode,
           limit,
         );
         if (!result.success) {
@@ -836,16 +905,16 @@ export class IndexSyncService {
           amount: item.turnover,
         }));
         source = 'easymoney';
-      } else if (dataSource === 'sina') {
+      } else if (selectedSource === 'sina') {
         // 新浪API
         this.logger.log(`使用新浪API同步: ${index.name}`);
-        data = await this.indexDataService.getSinaKline(index.code, limit);
+        data = await this.indexDataService.getSinaKline(selectedCode, limit);
         source = 'sina';
       } else {
-        // 腾讯API（默认），失败则尝试新浪
+        // 腾讯API（默认）
         this.logger.log(`使用腾讯API同步: ${index.name}`);
         const result = await this.indexDataService.getIndexData(
-          index.code,
+          selectedCode,
           limit,
         );
         data = result.data;
@@ -853,7 +922,7 @@ export class IndexSyncService {
       }
 
       if (data.length === 0) {
-        this.logger.warn(`未获取到数据: ${index.code}`);
+        this.logger.warn(`未获取到数据: ${selectedCode}`);
         return 0;
       }
 
