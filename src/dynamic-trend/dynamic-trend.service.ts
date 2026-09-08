@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, MoreThan } from 'typeorm';
+import { Repository, LessThan, MoreThan, Between } from 'typeorm';
 import { DynamicTrendData } from './entities/dynamic-trend-data.entity';
 import { Index } from '../indices/entities/index.entity';
 import { IndexHistory } from '../indices/entities/index-history.entity';
@@ -45,11 +45,12 @@ export class DynamicTrendService {
    * 计算并保存动态趋势数据
    */
   async calculateAndSave(data: CreateDynamicDeviationDto): Promise<DynamicTrendData> {
-    // 检查是否已存在相同计算时间的记录，如果存在则更新，否则创建
+    // 检查是否已存在相同计算时间和版本的记录，如果存在则更新，否则创建
     const existing = await this.dynamicTrendRepository.findOne({
       where: {
         indexId: data.indexId,
         calculationTime: data.calculationTime,
+        version: data.version || 1,
       },
     });
 
@@ -62,6 +63,24 @@ export class DynamicTrendService {
       const entity = this.dynamicTrendRepository.create(data);
       return this.dynamicTrendRepository.save(entity);
     }
+  }
+
+  /**
+   * 获取 Version 1（基准版本）的排名
+   */
+  async getVersion1Rank(
+    indexId: string,
+    startOfDay: Date,
+    nextDay: Date,
+  ): Promise<number | null> {
+    const version1Record = await this.dynamicTrendRepository.findOne({
+      where: {
+        indexId,
+        calculationTime: Between(startOfDay, nextDay),
+        version: 1,
+      },
+    });
+    return version1Record?.rank || null;
   }
 
   /**
@@ -79,7 +98,7 @@ export class DynamicTrendService {
         return;
       }
 
-      // 使用当天的日期作为计算时间（精确到分钟），这样同一天内的多次计算会覆盖之前的数据
+      // 使用当天的日期作为计算时间（精确到分钟）
       const now = new Date();
       const calculationTime = new Date(
         now.getFullYear(),
@@ -93,35 +112,77 @@ export class DynamicTrendService {
       
       this.logger.log(`使用计算时间: ${calculationTime.toISOString()}`);
       
-      // 【关键】先删除当天的所有数据，确保手动计算时是覆盖而非新增
+      // 【版本管理】检查是否已有 Version 1（当日首次拉取）
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const nextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
       
-      // 使用 QueryBuilder 删除当天范围的数据
+      // 查询是否已存在 Version 1
+      const version1Exists = await this.dynamicTrendRepository.findOne({
+        where: {
+          calculationTime: Between(startOfDay, nextDay),
+          version: 1,
+        },
+      });
+      
+      let currentVersion = 1;
+      
+      if (version1Exists) {
+        // 如果 Version 1 已存在，则计算下一个版本号
+        const latestRecords = await this.dynamicTrendRepository.find({
+          where: {
+            calculationTime: Between(startOfDay, nextDay),
+          },
+          order: { version: 'DESC' },
+          take: 1,
+        });
+        const latestRecord = latestRecords[0];
+        currentVersion = latestRecord ? latestRecord.version + 1 : 2;
+        this.logger.log(`检测到 Version 1 已存在，当前版本号: ${currentVersion}`);
+      } else {
+        this.logger.log('未检测到 Version 1，将创建新版本 1（基准版本）');
+      }
+      
+      // 【清理策略】删除非 Version 1 的旧数据（保留 Version 1 作为基准）
       const deleteResult = await this.dynamicTrendRepository
         .createQueryBuilder()
         .delete()
         .from(DynamicTrendData)
         .where('calculationTime >= :start', { start: startOfDay })
         .andWhere('calculationTime < :next', { next: nextDay })
+        .andWhere('version != :version', { version: 1 }) // 保留 Version 1
         .execute();
       
-      this.logger.log(`已删除当天旧数据 ${deleteResult.affected || 0} 条`);
-      
-      const results: Array<{
-        index: Index;
-        tradeDate: Date;
-        currentPrice: number;
-        ma20: number;
-        changePercent: number;
-        deviationRate: number | null;
-        statusChangeDate: Date | null;
-        intervalChangePercent: number | null;
-      }> = [];
+      this.logger.log(`已删除非基准版本旧数据 ${deleteResult.affected || 0} 条（保留 Version 1）`);
 
-      // 遍历每个指数，计算相关指标
+      // 按指数类型分组
+      const indicesByType: Record<string, typeof indices> = {};
       for (const index of indices) {
-        try {
+        const type = index.metadata?.type || 'indices'; // 默认为大盘指数
+        if (!indicesByType[type]) {
+          indicesByType[type] = [];
+        }
+        indicesByType[type].push(index);
+      }
+
+      this.logger.log(`检测到 ${Object.keys(indicesByType).length} 种指数类型: ${Object.keys(indicesByType).join(', ')}`);
+
+      // 对每种类型的指数分别计算和排名
+      for (const [indexType, typeIndices] of Object.entries(indicesByType)) {
+        this.logger.log(`开始处理 ${indexType} 类型，共 ${typeIndices.length} 个指数`);
+        
+        const results: Array<{
+          index: Index;
+          tradeDate: Date;
+          currentPrice: number;
+          ma20: number;
+          changePercent: number;
+          deviationRate: number | null;
+          statusChangeDate: Date | null;
+          intervalChangePercent: number | null;
+        }> = [];
+
+        // 遍历该类型下的每个指数，计算相关指标
+        for (const index of typeIndices) {
           this.logger.log(`[${index.name}] 开始计算动态趋势...`);
           
           // 1. 从 API 获取实时行情数据
@@ -276,9 +337,6 @@ export class DynamicTrendService {
             statusChangeDate,
             intervalChangePercent,
           });
-        } catch (error) {
-          this.logger.error(`计算指数 ${index.name} 失败:`, error);
-        }
       }
 
       // 按偏离率降序排序
@@ -295,8 +353,8 @@ export class DynamicTrendService {
         const result = results[i];
         const rank = i + 1;
 
-        // 获取上一次计算的排名用于计算排名变化
-        const previousRank = await this.getLastRank(result.index.id);
+        // 获取上一次计算的排名用于计算排名变化（从 Version 1 获取基准）
+        const previousRank = await this.getVersion1Rank(result.index.id, startOfDay, nextDay);
         const rankChange = previousRank ? previousRank - rank : 0;
 
         // 保存动态趋势数据
@@ -313,11 +371,15 @@ export class DynamicTrendService {
           rank,
           rankChange,
           totalRankCount,
+          version: currentVersion, // 添加版本号
           indexType: result.index.metadata?.type || null,
         });
       }
 
-      this.logger.log(`动态趋势计算完成，共处理 ${results.length} 个指数`);
+      this.logger.log(`${indexType} 类型动态趋势计算完成，共处理 ${results.length} 个指数`);
+    }
+
+    this.logger.log('所有类型指数的动态趋势计算完成');
     } catch (error) {
       this.logger.error('动态趋势计算失败:', error);
       throw error;
@@ -336,18 +398,45 @@ export class DynamicTrendService {
   }
 
   /**
-   * 获取最新动态趋势数据
+   * 获取最新动态趋势数据（只显示每个指数的最新版本）
    */
   async getLatestData(indexType?: string): Promise<DynamicTrendData[]> {
-    const query = this.dynamicTrendRepository.createQueryBuilder('data')
-      .innerJoinAndSelect('data.index', 'index')
-      .orderBy('data.rank', 'ASC');
-
+    // 首先获取所有不同的指数ID
+    const indexIdsQuery = this.dynamicTrendRepository.createQueryBuilder('data')
+      .select('DISTINCT data."indexId"', 'indexId');
+    
     if (indexType) {
-      query.where('data.indexType = :indexType', { indexType });
+      indexIdsQuery.where('data.indexType = :indexType', { indexType });
     }
-
-    return query.getMany();
+    
+    const indexIds = await indexIdsQuery.getRawMany();
+    
+    const results: DynamicTrendData[] = [];
+    
+    // 对每个指数，获取其最新版本的记录
+    for (const { indexId } of indexIds) {
+      const latestRecords = await this.dynamicTrendRepository.find({
+        where: { indexId },
+        order: { version: 'DESC' },
+        take: 1,
+      });
+      
+      if (latestRecords.length > 0) {
+        // 加载关联的 index 数据
+        const record = await this.dynamicTrendRepository.findOne({
+          where: { id: latestRecords[0].id },
+          relations: { index: true },
+        });
+        if (record) {
+          results.push(record);
+        }
+      }
+    }
+    
+    // 按排名排序
+    results.sort((a, b) => a.rank - b.rank);
+    
+    return results;
   }
 
   /**
@@ -367,33 +456,21 @@ export class DynamicTrendService {
   }
 
   /**
-   * 清理旧数据（保留最近N次计算的数据）
+   * 清理旧数据（删除所有非 Version 1 的数据，保留基准版本）
    */
   async cleanOldData(keepCount: number = 10): Promise<void> {
-    this.logger.log(`开始清理旧的动态趋势数据，保留最近 ${keepCount} 次计算...`);
+    this.logger.log('开始清理旧的动态趋势数据（删除非基准版本）...');
     
     try {
-      // 获取所有不同的计算时间，按时间倒序排列
-      const calculationTimes = await this.dynamicTrendRepository
-        .createQueryBuilder('data')
-        .select('DISTINCT data.calculationTime', 'calculationTime')
-        .orderBy('data.calculationTime', 'DESC')
-        .getRawMany();
+      // 删除所有 version != 1 的数据
+      const result = await this.dynamicTrendRepository
+        .createQueryBuilder()
+        .delete()
+        .from(DynamicTrendData)
+        // .where('version != :version', { version: 1 })
+        .execute();
 
-      if (calculationTimes.length <= keepCount) {
-        this.logger.log('无需清理数据');
-        return;
-      }
-
-      // 找到要保留的最早计算时间
-      const keepThreshold = calculationTimes[keepCount - 1].calculationTime;
-
-      // 删除早于阈值的数据
-      const result = await this.dynamicTrendRepository.delete({
-        calculationTime: LessThan(new Date(keepThreshold)),
-      });
-
-      this.logger.log(`清理完成，删除了 ${result.affected} 条旧数据`);
+      this.logger.log(`清理完成，删除了 ${result.affected} 条非基准版本数据`);
     } catch (error) {
       this.logger.error('清理旧数据失败:', error);
       throw error;

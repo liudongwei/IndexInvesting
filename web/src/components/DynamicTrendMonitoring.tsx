@@ -53,11 +53,8 @@ export function DynamicTrendMonitoring() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
-  // 根据当前Tab重新排序数据
-  const sortedData = data.map((item, index) => ({
-    ...item,
-    rank: index + 1, // 重新排名，从1开始
-  }));
+  // 根据当前Tab过滤并排序数据（保持后端计算的排名）
+  const sortedData = data.sort((a, b) => a.rank - b.rank);
   const loadData = async () => {
     setLoading(true);
     setError(null);

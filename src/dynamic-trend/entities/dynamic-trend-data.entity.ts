@@ -6,8 +6,9 @@ import { Index as IndexEntity } from '../../indices/entities/index.entity';
  * 存储指数的动态趋势状态、排名、偏离率等实时分析数据
  */
 @Entity('dynamic_trend_data')
-@Index(['indexId', 'calculationTime'], { unique: true })
+@Index(['indexId', 'calculationTime', 'version'], { unique: true })
 @Index(['calculationTime']) // 【性能优化】加速按计算时间查询和排序
+@Index(['version']) // 加速按版本查询
 export class DynamicTrendData {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -77,6 +78,9 @@ export class DynamicTrendData {
 
   @Column({ type: 'int', comment: '参与排名的指数总数' })
   totalRankCount: number;
+
+  @Column({ type: 'int', default: 1, comment: '版本号，1表示当日首次拉取（基准版本）' })
+  version: number;
 
   @Column({
     name: 'type',

@@ -11,5 +11,6 @@ export class CreateDynamicDeviationDto {
   rank: number;
   rankChange: number;
   totalRankCount: number;
+  version?: number; // 版本号，默认为1
   indexType?: string | null;
 }
