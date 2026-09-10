@@ -12,6 +12,7 @@ import { MovingAveragesModule } from './moving-averages/moving-averages.module';
 import { TrendAnalysisModule } from './trend-analysis/trend-analysis.module';
 import { CronConfigModule } from './cron-config/cron-config.module';
 import { DynamicTrendModule } from './dynamic-trend/dynamic-trend.module';
+import { KLinePatternsModule } from './kline-patterns/kline-patterns.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { DynamicTrendModule } from './dynamic-trend/dynamic-trend.module';
     TrendAnalysisModule,
     CronConfigModule,
     DynamicTrendModule,
+    KLinePatternsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
