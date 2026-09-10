@@ -19,14 +19,14 @@ import * as https from 'https';
 
 
 /**
- * 全局请求时间控制 - 确保所有东财请求间隔至少3秒
+ * 全局请求时间控制 - 确保所有东财请求间隔至少2秒
  */
 let globalLastRequestTime = 0;
-const MIN_REQUEST_INTERVAL = 3500; // 最小请求间隔3.5秒
+const MIN_REQUEST_INTERVAL = 2000; // 最小请求间隔2秒
 
 // IP封禁冷却期管理
 let ipBlockedUntil = 0; // IP被封禁直到某个时间点
-const IP_BLOCK_COOLDOWN = 60000; // IP封禁后冷却60秒
+const IP_BLOCK_COOLDOWN = 8000; // IP封禁后冷却8秒
 
 /**
  * User-Agent 列表，用于轮换避免被识别为爬虫
@@ -176,13 +176,13 @@ export class EastmoneyDataService {
    * @param minMs 最小延迟毫秒数
    * @param maxMs 最大延迟毫秒数
    */
-  private async randomDelay(minMs: number = 1000, maxMs: number = 3000): Promise<void> {
+  private async randomDelay(minMs: number = 800, maxMs: number = 2000): Promise<void> {
     const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
     await new Promise((resolve) => setTimeout(resolve, delay));
   }
 
   /**
-   * 全局请求间隔控制 - 确保两次请求间隔至少3.5秒
+   * 全局请求间隔控制 - 确保两次请求间隔至少2秒
    */
   private async enforceGlobalRateLimit(): Promise<void> {
     const now = Date.now();
@@ -226,8 +226,8 @@ export class EastmoneyDataService {
    */
   private async requestWithRetry(
     url: string,
-    maxRetries: number = 5, // 增加最大重试次数从3到5
-    retryDelay: number = 3000, // 增加基础延迟从2000到3000
+    maxRetries: number = 3, // 最多重试3次（1次初始+2次重试）
+    retryDelay: number = 2000, // 基础延迟2秒
   ): Promise<any> {
     let lastError: Error | null = null;
 
@@ -239,12 +239,13 @@ export class EastmoneyDataService {
         // 全局限流检查
         await this.enforceGlobalRateLimit();
 
-        // 计算重试延迟：使用指数退避策略
+        // 计算重试延迟：使用指数退避策略，但不超过10秒
         if (attempt > 1) {
-          // 指数退避：第2次3秒，第3次6秒，第4次12秒，第5次24秒
+          // 指数退避：第2次2秒，第3次4秒， capped at 8秒
           const exponentialDelay = retryDelay * Math.pow(2, attempt - 2);
-          const randomJitter = Math.floor(Math.random() * 2000); // 额外随机抖动0-2秒
-          const totalDelay = exponentialDelay + randomJitter;
+          const cappedDelay = Math.min(exponentialDelay, 8000); // 最多8秒
+          const randomJitter = Math.floor(Math.random() * 1000); // 额外随机抖动0-1秒
+          const totalDelay = cappedDelay + randomJitter;
           this.logger.log(`第 ${attempt}/${maxRetries} 次尝试，等待 ${totalDelay}ms (指数退避 + 随机抖动)...`);
           await new Promise((resolve) => setTimeout(resolve, totalDelay));
         }
@@ -305,9 +306,9 @@ export class EastmoneyDataService {
           break;
         }
 
-        // 针对严重错误（如 socket hang up），增加更长等待时间
+        // 针对严重错误（如 socket hang up），增加等待时间（不超过8秒）
         if (isIpBlocked) {
-          const severeErrorDelay = 5000 + Math.floor(Math.random() * 5000); // 5-10秒
+          const severeErrorDelay = 3000 + Math.floor(Math.random() * 3000); // 3-6秒
           this.logger.log(`检测到严重连接问题(IP封禁?)，额外等待 ${severeErrorDelay}ms...`);
           await new Promise((resolve) => setTimeout(resolve, severeErrorDelay));
         }
@@ -738,10 +739,10 @@ export class EastmoneyDataService {
       this.logger.log(`从东财API获取 ${symbol} 数据，secid: ${secid}`);
 
       // 请求前添加随机延迟，避免请求过于规律
-      await this.randomDelay(1500, 2500);
+      await this.randomDelay(1000, 2000);
 
-      // 使用带重试机制的请求
-      const json = await this.requestWithRetry(url, 3, 3000);
+      // 使用带重试机制的请求（最多3次，基础延迟2秒）
+      const json = await this.requestWithRetry(url, 3, 2000);
 
       // 检查返回数据
       if (!json.data || !json.data.klines || !Array.isArray(json.data.klines)) {

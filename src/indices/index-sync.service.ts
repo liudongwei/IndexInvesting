@@ -176,9 +176,9 @@ export class IndexSyncService {
 
           // 添加延迟，避免请求过快（东财API需要更长的间隔）
           if (year < targetEndYear) {
-            // 东财API需要至少3.5秒的间隔来避免触发反爬
+            // 东财API需要至少2秒的间隔来避免触发反爬
             const delay = selectedSource === 'eastmoney' 
-              ? 4000 + Math.floor(Math.random() * 2000)  // 4-6秒随机间隔
+              ? 2000 + Math.floor(Math.random() * 1500)  // 2-3.5秒随机间隔
               : 1500;
             this.logger.log(`等待 ${delay}ms 后继续下一年的同步...`);
             await new Promise((r) => setTimeout(r, delay));
@@ -188,7 +188,7 @@ export class IndexSyncService {
           years.push({ year, count: 0, status: `error: ${error.message}` });
           // 失败后增加额外延迟，避免连续失败
           if (selectedSource === 'eastmoney' && year < targetEndYear) {
-            const errorDelay = 4000 + Math.floor(Math.random() * 4000);
+            const errorDelay = 2000 + Math.floor(Math.random() * 3000); // 2-5秒
             this.logger.log(`同步失败，额外等待 ${errorDelay}ms...`);
             await new Promise((r) => setTimeout(r, errorDelay));
           }
@@ -1319,8 +1319,19 @@ export class IndexSyncService {
     const results: { name: string; count: number }[] = [];
     let totalCount = 0;
     let skippedCount = 0; // 跳过的指数数量
+    let failedCount = 0; // 失败的指数数量
+    const MAX_FAILED_COUNT = 3; // 最大失败次数，达到后跳过剩余所有指数
+    let shouldSkipRemaining = false; // 是否应该跳过剩余的指数
 
     for (const index of targetIndices) {
+      // 如果已经达到最大失败次数，跳过所有剩余指数
+      if (shouldSkipRemaining) {
+        this.logger.warn(`已达到最大失败次数 (${MAX_FAILED_COUNT})，跳过 ${index.name}`);
+        skippedCount++;
+        results.push({ name: index.name, count: 0 });
+        continue;
+      }
+
       try {
         // 检查当天数据是否已同步
         const latestDate = await this.indicesService.getLatestHistoryDate(
@@ -1356,18 +1367,27 @@ export class IndexSyncService {
         results.push({ name: index.name, count });
         totalCount += count;
 
-        // 添加随机延迟（3-6秒），避免请求过快
-        const delay = 3000 + Math.floor(Math.random() * 3000);
+        // 添加随机延迟（2-4秒），避免请求过快
+        const delay = 2000 + Math.floor(Math.random() * 2000);
         this.logger.log(`等待 ${delay}ms 后继续下一个指数的同步...`);
         await new Promise((r) => setTimeout(r, delay));
       } catch (error) {
         this.logger.error(`同步 ${index.name} 失败: ${error.message}`);
         results.push({ name: index.name, count: 0 });
+        failedCount++;
+        
+        // 检查是否达到最大失败次数
+        if (failedCount >= MAX_FAILED_COUNT) {
+          shouldSkipRemaining = true;
+          this.logger.error(
+            `已达到最大失败次数 (${MAX_FAILED_COUNT})，剩余所有指数将跳过`,
+          );
+        }
       }
     }
 
     this.logger.log(
-      `${marketName}同步完成：跳过 ${skippedCount} 个已同步指数，共新增 ${totalCount} 条数据`,
+      `${marketName}同步完成：跳过 ${skippedCount} 个已同步指数，失败 ${failedCount} 个，共新增 ${totalCount} 条数据`,
     );
 
     // 同步完成后，计算该市场的MA和趋势数据
