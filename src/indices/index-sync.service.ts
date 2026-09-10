@@ -1319,14 +1319,38 @@ export class IndexSyncService {
     const results: { name: string; count: number }[] = [];
     let totalCount = 0;
     let skippedCount = 0; // 跳过的指数数量
-    let failedCount = 0; // 失败的指数数量
-    const MAX_FAILED_COUNT = 3; // 最大失败次数，达到后跳过剩余所有指数
-    let shouldSkipRemaining = false; // 是否应该跳过剩余的指数
+    
+    // 分别跟踪不同数据源的失败次数
+    const sourceFailedCounts = {
+      eastmoney: 0,
+      sina: 0,
+      tencent: 0,
+    };
+    const MAX_FAILED_COUNT_PER_SOURCE = 3; // 每个数据源最大失败次数
+    
+    // 跟踪哪些数据源已达到失败上限
+    const skippedSources = {
+      eastmoney: false,
+      sina: false,
+      tencent: false,
+    };
 
     for (const index of targetIndices) {
-      // 如果已经达到最大失败次数，跳过所有剩余指数
-      if (shouldSkipRemaining) {
-        this.logger.warn(`已达到最大失败次数 (${MAX_FAILED_COUNT})，跳过 ${index.name}`);
+      // 获取该指数使用的数据源
+      const dataSources = index.metadata?.dataSources || {};
+      let currentSource: string = 'tencent'; // 默认腾讯
+      
+      if (dataSources.eastmoney?.enabled) {
+        currentSource = 'eastmoney';
+      } else if (dataSources.sina?.enabled) {
+        currentSource = 'sina';
+      } else if (dataSources.tencent?.enabled) {
+        currentSource = 'tencent';
+      }
+      
+      // 如果该数据源已达到失败上限，跳过使用该数据源的指数
+      if (skippedSources[currentSource]) {
+        this.logger.warn(`数据源 ${currentSource} 已达到最大失败次数 (${MAX_FAILED_COUNT_PER_SOURCE})，跳过 ${index.name}`);
         skippedCount++;
         results.push({ name: index.name, count: 0 });
         continue;
@@ -1374,20 +1398,25 @@ export class IndexSyncService {
       } catch (error) {
         this.logger.error(`同步 ${index.name} 失败: ${error.message}`);
         results.push({ name: index.name, count: 0 });
-        failedCount++;
         
-        // 检查是否达到最大失败次数
-        if (failedCount >= MAX_FAILED_COUNT) {
-          shouldSkipRemaining = true;
+        // 增加该数据源的失败计数
+        sourceFailedCounts[currentSource]++;
+        
+        // 检查该数据源是否达到最大失败次数
+        if (sourceFailedCounts[currentSource] >= MAX_FAILED_COUNT_PER_SOURCE) {
+          skippedSources[currentSource] = true;
           this.logger.error(
-            `已达到最大失败次数 (${MAX_FAILED_COUNT})，剩余所有指数将跳过`,
+            `数据源 ${currentSource} 已达到最大失败次数 (${MAX_FAILED_COUNT_PER_SOURCE})，将跳过使用该数据源的剩余指数`,
           );
         }
       }
     }
 
+    // 计算总失败数
+    const totalFailedCount = Object.values(sourceFailedCounts).reduce((sum, count) => sum + count, 0);
+    
     this.logger.log(
-      `${marketName}同步完成：跳过 ${skippedCount} 个已同步指数，失败 ${failedCount} 个，共新增 ${totalCount} 条数据`,
+      `${marketName}同步完成：跳过 ${skippedCount} 个已同步指数，失败 ${totalFailedCount} 个（东财:${sourceFailedCounts.eastmoney}, 新浪:${sourceFailedCounts.sina}, 腾讯:${sourceFailedCounts.tencent}），共新增 ${totalCount} 条数据`,
     );
 
     // 同步完成后，计算该市场的MA和趋势数据
