@@ -3,6 +3,7 @@ import type { IndexItem, IndexFormData, IndexSyncResult } from '../types/index';
 import type { IndexHistoryResponse } from '../types/history';
 import type { CronConfig } from '../types/cron';
 import type { MovingAverageResponse } from '../types/moving-average';
+import type { KLinePatternResponse, QueryPatternParams } from '../types/kline-pattern';
 import { INDEX_TYPE, type IndexType } from '../types/index-type';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
@@ -636,6 +637,48 @@ export async function triggerDynamicTrendCalculation(): Promise<{
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.message || `计算失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 获取参与K线形态计算的指数列表
+ */
+export async function getKlinePatternIndices(): Promise<{
+  success: boolean;
+  count: number;
+  data: IndexItem[];
+}> {
+  const response = await fetch(`${API_BASE_URL}/indices/kline-pattern-participants`);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 按条件查询K线形态数据（支持分页）
+ */
+export async function queryKLinePatterns(params?: QueryPatternParams): Promise<KLinePatternResponse> {
+  let url = `${API_BASE_URL}/kline-patterns/query?`;
+  if (params) {
+    if (params.indexId) url += `indexId=${params.indexId}&`;
+    if (params.startDate) url += `startDate=${params.startDate}&`;
+    if (params.endDate) url += `endDate=${params.endDate}&`;
+    if (params.isRealtime !== undefined) url += `isRealtime=${params.isRealtime}&`;
+    if (params.page !== undefined) url += `page=${params.page}&`;
+    if (params.pageSize !== undefined) url += `pageSize=${params.pageSize}&`;
+  }
+  
+  // 移除末尾的 '&' 如果存在
+  if (url.endsWith('&')) {
+    url = url.slice(0, -1);
+  }
+  
+  const response = await fetch(url);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `查询失败: ${response.status}`);
   }
   return response.json();
 }

@@ -192,6 +192,60 @@ export class KLinePatternService {
   }
 
   /**
+   * 按条件查询K线形态数据（支持分页）
+   * @param indexId 可选，指数ID
+   * @param startDate 可选，开始日期
+   * @param endDate 可选，结束日期
+   * @param isRealtime 可选，是否实时数据
+   * @param page 页码（从1开始）
+   * @param pageSize 每页条数
+   */
+  async queryPatterns(
+    indexId?: string,
+    startDate?: string,
+    endDate?: string,
+    isRealtime?: boolean,
+    page: number = 1,
+    pageSize: number = 20
+  ): Promise<{ data: KLinePattern[]; total: number; count: number }> {
+    const queryBuilder = this.klinePatternRepo.createQueryBuilder('pattern');
+
+    // 添加筛选条件
+    if (indexId) {
+      queryBuilder.andWhere('pattern.indexId = :indexId', { indexId });
+    }
+
+    if (startDate) {
+      queryBuilder.andWhere('pattern.tradeDate >= :startDate', { startDate });
+    }
+
+    if (endDate) {
+      queryBuilder.andWhere('pattern.tradeDate <= :endDate', { endDate });
+    }
+
+    if (isRealtime !== undefined) {
+      queryBuilder.andWhere('pattern.isRealtime = :isRealtime', { isRealtime });
+    }
+
+    // 获取总数
+    const total = await queryBuilder.getCount();
+
+    // 添加排序和分页
+    queryBuilder
+      .orderBy('pattern.tradeDate', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize);
+
+    const data = await queryBuilder.getMany();
+
+    return {
+      data,
+      total,
+      count: data.length
+    };
+  }
+
+  /**
    * 清理指定日期之前的实时K线形态数据
    * @param beforeDate 清理此日期之前的实时数据
    * @returns 删除的记录数

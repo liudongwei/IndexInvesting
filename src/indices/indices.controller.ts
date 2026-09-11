@@ -222,6 +222,23 @@ export class IndicesController {
     }
   }
 
+  @Get('kline-pattern-participants')
+  @ApiOperation({
+    summary: '获取参与K线形态计算的指数列表',
+    description: '返回所有metadata.participateInKlinePattern为true的指数列表。',
+  })
+  async getKlinePatternParticipants() {
+    const indices = await this.indicesService.findAll();
+    const participatingIndices = indices.filter(
+      (index) => index.metadata?.participateInKlinePattern === true,
+    );
+    return {
+      success: true,
+      count: participatingIndices.length,
+      data: participatingIndices,
+    };
+  }
+
   @Get(':id')
   @ApiOperation({ summary: '获取指数详情' })
   findOne(@Param('id') id: string) {

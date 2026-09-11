@@ -1,6 +1,6 @@
-import { Controller, Get, Post, Body, Query, Param, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, ParseUUIDPipe, ValidationPipe } from '@nestjs/common';
 import { KLinePatternService } from './kline-pattern.service';
-import { AnalyzePatternDto, GetPatternHistoryDto } from './dto/analyze-pattern.dto';
+import { AnalyzePatternDto, GetPatternHistoryDto, QueryPatternDto } from './dto/analyze-pattern.dto';
 
 /**
  * K线形态分析控制器
@@ -100,6 +100,26 @@ export class KLinePatternController {
     return {
       success: true,
       message: '实时分析已完成'
+    };
+  }
+
+  /**
+   * 按条件查询K线形态数据（支持分页）
+   */
+  @Get('query')
+  async query(@Query(new ValidationPipe({ transform: true, whitelist: true })) query: QueryPatternDto) {
+    const result = await this.klinePatternService.queryPatterns(
+      query.indexId,
+      query.startDate,
+      query.endDate,
+      query.isRealtime,
+      query.page || 1,
+      query.pageSize || 20
+    );
+
+    return {
+      success: true,
+      ...result
     };
   }
 }
