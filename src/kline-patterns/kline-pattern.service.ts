@@ -84,7 +84,12 @@ export class KLinePatternService {
 
       // 如果是静态计算，保存到数据库
       if (!isRealtime && primaryPattern) {
-        await this.savePatternResult(indexId, tradeDate, result);
+        await this.savePatternResult(indexId, tradeDate, result, false);
+      }
+      
+      // 如果是实时计算，也保存到数据库（标记为实时）
+      if (isRealtime && primaryPattern) {
+        await this.savePatternResult(indexId, tradeDate, result, true);
       }
 
       return result;
@@ -143,12 +148,14 @@ export class KLinePatternService {
         if (result?.primaryPattern) {
           const pattern = result.primaryPattern;
           if ((pattern.signal === 'buy' || pattern.signal === 'sell') && pattern.confidence > 0.8) {
-            this.logger.warn(`发现重要信号: 指数 ${index.id}, 形态: ${pattern.patternName}, 信号: ${pattern.signal}, 置信度: ${pattern.confidence}`);
+            this.logger.warn(`发现重要信号: 指数 ${index.name}-${index.officialCode}, 形态: ${pattern.patternName}, 信号: ${pattern.signal}, 置信度: ${pattern.confidence}`);
             // TODO: 发送邮件/短信通知
           }
         }
       } catch (error) {
-        this.logger.error(`实时分析指数 ${index.id} 失败: ${error.message}`);
+        this.logger.error(
+          `实时分析指数 ${index.name}-${index.officialCode} 失败: ${error.message}`,
+        );
       }
     }
 
@@ -185,18 +192,79 @@ export class KLinePatternService {
   }
 
   /**
+   * 清理指定日期之前的实时K线形态数据
+   * @param beforeDate 清理此日期之前的实时数据
+   * @returns 删除的记录数
+   */
+  async cleanRealtimeDataBefore(beforeDate: Date): Promise<number> {
+    this.logger.log(`开始清理 ${beforeDate} 之前的实时K线形态数据...`);
+    
+    try {
+      const result = await this.klinePatternRepo
+        .createQueryBuilder()
+        .delete()
+        .from(KLinePattern)
+        .where('isRealtime = :isRealtime', { isRealtime: true })
+        .andWhere('tradeDate < :beforeDate', { beforeDate })
+        .execute();
+
+      const deletedCount = result.affected || 0;
+      this.logger.log(`清理完成，删除了 ${deletedCount} 条实时K线形态数据`);
+      
+      return deletedCount;
+    } catch (error) {
+      this.logger.error(`清理实时K线形态数据失败: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * 清理当天的所有实时K线形态数据（用于交易日结束后清理）
+   * @returns 删除的记录数
+   */
+  async cleanTodayRealtimeData(): Promise<number> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    this.logger.log(`开始清理当天(${today})的实时K线形态数据...`);
+    
+    try {
+      const result = await this.klinePatternRepo
+        .createQueryBuilder()
+        .delete()
+        .from(KLinePattern)
+        .where('isRealtime = :isRealtime', { isRealtime: true })
+        .andWhere('tradeDate = :today', { today })
+        .execute();
+
+      const deletedCount = result.affected || 0;
+      this.logger.log(`清理完成，删除了 ${deletedCount} 条当天实时K线形态数据`);
+      
+      return deletedCount;
+    } catch (error) {
+      this.logger.error(`清理当天实时K线形态数据失败: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
    * 保存形态分析结果到数据库
+   * @param indexId 指数ID
+   * @param tradeDate 交易日期
+   * @param result 分析结果
+   * @param isRealtime 是否实时计算
    */
   private async savePatternResult(
     indexId: string,
     tradeDate: Date,
-    result: KLineAnalysisResult
+    result: KLineAnalysisResult,
+    isRealtime: boolean = false
   ): Promise<void> {
     if (!result.primaryPattern) {
       return;
     }
 
-    const existing = await this.getPatternByDate(indexId, tradeDate, false);
+    const existing = await this.getPatternByDate(indexId, tradeDate, isRealtime);
 
     const patternData: Partial<KLinePattern> = {
       indexId,
@@ -216,13 +284,15 @@ export class KLinePatternService {
         allPatterns: result.patterns,
         trendDescription: result.trendState
       },
-      isRealtime: false
+      isRealtime
     };
 
     if (existing) {
       await this.klinePatternRepo.update(existing.id, patternData);
+      this.logger.debug(`更新${isRealtime ? '实时' : '静态'}K线形态: 指数${indexId}, 日期${tradeDate}`);
     } else {
       await this.klinePatternRepo.insert(patternData);
+      this.logger.debug(`插入${isRealtime ? '实时' : '静态'}K线形态: 指数${indexId}, 日期${tradeDate}`);
     }
   }
 

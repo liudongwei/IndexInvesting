@@ -28,6 +28,16 @@ export class DynamicTrendService {
   ) {}
 
   /**
+   * 生成随机延迟（1-2秒）
+   */
+  private async randomDelay(): Promise<void> {
+    const delaySeconds = Math.floor(Math.random() * 2) + 1; // 1-3秒随机
+    const delayMs = delaySeconds * 1000;
+    this.logger.debug(`等待 ${delaySeconds} 秒后继续...`);
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+  }
+
+  /**
    * 获取参与动态趋势计算的指数列表
    */
   async getParticipatingIndices(indexType?: string): Promise<Index[]> {
@@ -184,6 +194,9 @@ export class DynamicTrendService {
         // 遍历该类型下的每个指数，计算相关指标
         for (const index of typeIndices) {
           this.logger.log(`[${index.name}] 开始计算动态趋势...`);
+          
+          // 在请求API前添加随机延迟，避免频繁请求
+          await this.randomDelay();
           
           // 1. 从 metadata.dataSources 中获取启用的数据源
           const dataSources = index.metadata?.dataSources || {};

@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ScheduleModule } from '@nestjs/schedule';
 import { KLinePattern } from './entities/kline-pattern.entity';
 import { IndexHistory } from '../indices/entities/index-history.entity';
 import { Index } from '../indices/entities/index.entity';
@@ -14,7 +13,6 @@ import { ThreeCandlePatterns } from './patterns/three-candle.pattern';
 
 @Module({
   imports: [
-    ScheduleModule.forRoot(),
     TypeOrmModule.forFeature([KLinePattern, IndexHistory, Index])
   ],
   controllers: [KLinePatternController],
@@ -26,6 +24,6 @@ import { ThreeCandlePatterns } from './patterns/three-candle.pattern';
     TwoCandlePatterns,
     ThreeCandlePatterns
   ],
-  exports: [KLinePatternService]
+  exports: [KLinePatternService, KLinePatternCronService]
 })
 export class KLinePatternsModule {}

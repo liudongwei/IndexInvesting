@@ -10,6 +10,10 @@ import { IndexSyncService } from '../indices/index-sync.service';
 import { MACronService } from '../moving-averages/ma-cron.service';
 import { TrendCronService } from '../trend-analysis/trend-cron.service';
 import { DynamicTrendService } from '../dynamic-trend/dynamic-trend.service';
+import { KLinePatternService } from '../kline-patterns/kline-pattern.service';
+import { Index } from '../indices/entities/index.entity';
+import { KLinePatternCronService } from '../kline-patterns/kline-pattern-cron.service';
+import { KLinePattern } from '../kline-patterns/entities/kline-pattern.entity';
 
 // 预定义的 Cron 任务配置
 export const DEFAULT_CRON_CONFIGS: Partial<CronConfig>[] = [
@@ -109,6 +113,30 @@ export const DEFAULT_CRON_CONFIGS: Partial<CronConfig>[] = [
     category: '动态趋势',
     isEnabled: true,
   },
+  {
+    taskName: 'klinePatternDailyBatch',
+    cronExpression: '30 16 * * *',
+    displayName: 'K线形态每日批量分析',
+    description: '每个交易日16:30执行，计算当日所有指数的静态K线形态',
+    category: 'K线形态',
+    isEnabled: true,
+  },
+  {
+    taskName: 'klinePatternRealtime',
+    cronExpression: '*/5 9-15 * * 1-5',
+    displayName: 'K线形态实时分析',
+    description: '工作日上午9:30-15:00，每5分钟执行一次实时K线形态分析',
+    category: 'K线形态',
+    isEnabled: true,
+  },
+  {
+    taskName: 'klinePatternCleanRealtime',
+    cronExpression: '0 0 * * *',
+    displayName: '清理K线形态实时数据',
+    description: '每天凌晨清理当天的实时K线形态数据（保留静态终态数据）',
+    category: 'K线形态',
+    isEnabled: true,
+  },
 ];
 
 @Injectable()
@@ -123,6 +151,8 @@ export class CronConfigService implements OnModuleInit {
     private maCronService: MACronService,
     private trendCronService: TrendCronService,
     private dynamicTrendService: DynamicTrendService,
+    private klinePatternService: KLinePatternService,
+    private klinePatternCronService: KLinePatternCronService,
   ) {}
 
   async onModuleInit() {
@@ -237,6 +267,14 @@ export class CronConfigService implements OnModuleInit {
         return this.dynamicTrendService.calculateAndRank();
       case 'dynamicTrendCleanOldData':
         return this.dynamicTrendService.cleanOldData(10);
+
+      // K线形态分析任务
+      case 'klinePatternDailyBatch':
+        return this.klinePatternCronService.handleDailyBatchAnalysis();
+      case 'klinePatternRealtime':
+        return this.klinePatternCronService.handleRealtimeAnalysis();
+      case 'klinePatternCleanRealtime':
+        return this.klinePatternService.cleanTodayRealtimeData();
 
       default:
         throw new Error(`未知的任务名称: ${taskName}`);

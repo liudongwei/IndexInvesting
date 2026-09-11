@@ -8,6 +8,8 @@ import { IndicesModule } from '../indices/indices.module';
 import { MovingAveragesModule } from '../moving-averages/moving-averages.module';
 import { TrendAnalysisModule } from '../trend-analysis/trend-analysis.module';
 import { DynamicTrendModule } from '../dynamic-trend/dynamic-trend.module';
+import { KLinePatternsModule } from '../kline-patterns/kline-patterns.module';
+import { KLinePatternCronService } from '../kline-patterns/kline-pattern-cron.service';
 
 @Module({
   imports: [
@@ -17,6 +19,7 @@ import { DynamicTrendModule } from '../dynamic-trend/dynamic-trend.module';
     forwardRef(() => MovingAveragesModule),
     forwardRef(() => TrendAnalysisModule),
     forwardRef(() => DynamicTrendModule),
+    forwardRef(() => KLinePatternsModule),
   ],
   controllers: [CronConfigController],
   providers: [CronConfigService],

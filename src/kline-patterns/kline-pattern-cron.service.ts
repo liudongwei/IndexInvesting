@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { KLinePatternService } from './kline-pattern.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -8,8 +7,8 @@ import { Index } from '../indices/entities/index.entity';
 /**
  * K线形态分析定时任务服务
  * 
- * 1. 收盘后批量计算（工作日16:00执行）
- * 2. 盘中实时计算（工作日上午9:30-15:00，每分钟执行）
+ * 注意：此服务中的定时任务已移至 cron-config 模块统一管理
+ * 这里保留手动触发方法用于测试和补算
  */
 @Injectable()
 export class KLinePatternCronService {
@@ -25,8 +24,9 @@ export class KLinePatternCronService {
   /**
    * 收盘后批量计算K线形态
    * 每个交易日16:00执行，计算当日所有指数的静态K线形态
+   * 
+   * 注意：此方法已由 cron-config 模块统一管理，不再使用 @Cron 装饰器
    */
-  @Cron(CronExpression.EVERY_DAY_AT_4PM)
   async handleDailyBatchAnalysis() {
     this.logger.log('触发收盘后批量K线形态分析');
 
@@ -63,8 +63,9 @@ export class KLinePatternCronService {
   /**
    * 盘中实时计算K线形态
    * 工作日上午9:30-15:00，每分钟执行一次
+   * 
+   * 注意：此方法已由 cron-config 模块统一管理，不再使用 @Cron 装饰器
    */
-  @Cron('0 * 9-15 * * 1-5') // 工作日 9:00-15:59
   async handleRealtimeAnalysis() {
     // 防止重复执行
     if (this.isRealtimeRunning) {
