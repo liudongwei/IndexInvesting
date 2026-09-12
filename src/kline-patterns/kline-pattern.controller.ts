@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Query, Param, ParseUUIDPipe, ValidationPipe } from '@nestjs/common';
 import { KLinePatternService } from './kline-pattern.service';
 import { AnalyzePatternDto, GetPatternHistoryDto, QueryPatternDto } from './dto/analyze-pattern.dto';
+import { CalculateKLinePatternDto } from './dto/calculate-kline-pattern.dto';
 
 /**
  * K线形态分析控制器
@@ -105,6 +106,16 @@ export class KLinePatternController {
 
   /**
    * 按条件查询K线形态数据（支持分页）
+   * @param query 查询参数
+   * @param query.indexId 可选，指数ID
+   * @param query.startDate 可选，开始日期
+   * @param query.endDate 可选，结束日期
+   * @param query.isRealtime 可选，是否实时数据
+   * @param query.trendState 可选，趋势状态 (uptrend/downtrend/sideways)
+   * @param query.patternName 可选，形态名称（支持模糊搜索）
+   * @param query.signal 可选，信号类型 (buy/sell/neutral)
+   * @param query.page 可选，页码（默认1）
+   * @param query.pageSize 可选，每页条数（默认20）
    */
   @Get('query')
   async query(@Query(new ValidationPipe({ transform: true, whitelist: true })) query: QueryPatternDto) {
@@ -113,6 +124,9 @@ export class KLinePatternController {
       query.startDate,
       query.endDate,
       query.isRealtime,
+      query.trendState,
+      query.patternName,
+      query.signal,
       query.page || 1,
       query.pageSize || 20
     );
@@ -120,6 +134,52 @@ export class KLinePatternController {
     return {
       success: true,
       ...result
+    };
+  }
+
+  /**
+   * 批量计算K线形态（用于验证计算准确性）
+   * @param dto 计算参数
+   */
+  @Post('calculate-verify')
+  async calculateVerify(@Body(new ValidationPipe({ whitelist: true })) dto: CalculateKLinePatternDto) {
+    const tradeDate = dto.tradeDate ? new Date(dto.tradeDate) : new Date();
+    
+    // 设置时间为当天0点
+    tradeDate.setHours(0, 0, 0, 0);
+
+    let indexIds: string[] = [];
+
+    // 确定要计算的指数ID列表
+    if (dto.indexId) {
+      indexIds = [dto.indexId];
+    } else if (dto.indexIds && dto.indexIds.length > 0) {
+      indexIds = dto.indexIds;
+    } else {
+      // 如果没有指定指数，获取所有参与K线形态计算的指数
+      const indices = await this.klinePatternService.getParticipatingIndices();
+      indexIds = indices.map(idx => idx.id);
+    }
+
+    if (indexIds.length === 0) {
+      return {
+        success: false,
+        message: '没有找到需要计算的指数',
+        data: []
+      };
+    }
+
+    // 批量计算
+    const results = await this.klinePatternService.batchCalculateForVerification(
+      indexIds,
+      tradeDate
+    );
+
+    return {
+      success: true,
+      message: `成功计算 ${results.length} 个指数的K线形态`,
+      data: results,
+      total: results.length
     };
   }
 }

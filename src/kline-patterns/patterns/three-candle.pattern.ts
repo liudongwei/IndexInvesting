@@ -3,7 +3,7 @@ import { Candle, PatternResult } from '../dto/kline-pattern.dto';
 
 /**
  * 三根K线形态识别器
- * 包括：早晨之星、黄昏之星、三只乌鸦、三个白兵
+ * 包括：启明星、黄昏之星、三只乌鸦、三个白兵
  */
 @Injectable()
 export class ThreeCandlePatterns {
@@ -41,7 +41,7 @@ export class ThreeCandlePatterns {
   }
 
   /**
-   * 早晨之星 (Morning Star) - 看涨信号
+   * 启明星 (Morning Star) - 看涨信号
    * 特征：
    * 1. 第一日是长阴线（下跌趋势延续）
    * 2. 第二日是小实体K线（十字星或小阳线/阴线，表示犹豫）
@@ -89,7 +89,7 @@ export class ThreeCandlePatterns {
 
     return {
       patternType: 'morning_star',
-      patternName: '早晨之星',
+      patternName: '启明星',
       confidence: Math.min(1, confidence),
       signal: 'buy',
       description: '阴线-小实体-阳线的组合，底部反转信号'

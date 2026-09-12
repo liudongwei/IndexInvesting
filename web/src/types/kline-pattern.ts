@@ -28,6 +28,9 @@ export interface QueryPatternParams {
   startDate?: string;
   endDate?: string;
   isRealtime?: boolean;
+  trendState?: 'uptrend' | 'downtrend' | 'sideways';
+  patternName?: string;
+  signal?: 'buy' | 'sell' | 'neutral';
   page?: number;
   pageSize?: number;
 }

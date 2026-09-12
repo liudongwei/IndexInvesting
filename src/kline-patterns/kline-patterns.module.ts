@@ -10,6 +10,7 @@ import { TrendDetectorService } from './patterns/trend-detector.service';
 import { SingleCandlePatterns } from './patterns/single-candle.pattern';
 import { TwoCandlePatterns } from './patterns/two-candle.pattern';
 import { ThreeCandlePatterns } from './patterns/three-candle.pattern';
+import { HaramiPatterns } from './patterns/harami.pattern';
 
 @Module({
   imports: [
@@ -22,7 +23,8 @@ import { ThreeCandlePatterns } from './patterns/three-candle.pattern';
     TrendDetectorService,
     SingleCandlePatterns,
     TwoCandlePatterns,
-    ThreeCandlePatterns
+    ThreeCandlePatterns,
+    HaramiPatterns
   ],
   exports: [KLinePatternService, KLinePatternCronService]
 })

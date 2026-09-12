@@ -14,6 +14,9 @@ export function KLinePatternManagement() {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [isRealtime, setIsRealtime] = useState<boolean | undefined>(undefined);
+  const [trendState, setTrendState] = useState<string>('');
+  const [patternName, setPatternName] = useState<string>('');
+  const [signal, setSignal] = useState<string>('');
   
   // 分页
   const [page, setPage] = useState(1);
@@ -44,6 +47,9 @@ export function KLinePatternManagement() {
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
       if (isRealtime !== undefined) params.isRealtime = isRealtime;
+      if (trendState) params.trendState = trendState;
+      if (patternName) params.patternName = patternName;
+      if (signal) params.signal = signal;
       
       const response = await queryKLinePatterns(params);
       setPatterns(response.data);
@@ -61,7 +67,7 @@ export function KLinePatternManagement() {
 
   useEffect(() => {
     loadPatterns();
-  }, [page, selectedindexId, startDate, endDate, isRealtime]);
+  }, [page, selectedindexId, startDate, endDate, isRealtime, trendState, patternName, signal]);
 
   // 格式化日期
   const formatDate = (dateStr: string) => {
@@ -110,6 +116,9 @@ export function KLinePatternManagement() {
     setStartDate('');
     setEndDate('');
     setIsRealtime(undefined);
+    setTrendState('');
+    setPatternName('');
+    setSignal('');
     setPage(1);
   };
 
@@ -142,7 +151,7 @@ export function KLinePatternManagement() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         {/* 搜索栏 */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">选择指数</label>
               <select
@@ -194,12 +203,58 @@ export function KLinePatternManagement() {
                 <option value="false">静态数据</option>
               </select>
             </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">趋势状态</label>
+              <select
+                value={trendState}
+                onChange={(e) => setTrendState(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">全部</option>
+                <option value="uptrend">上升趋势</option>
+                <option value="downtrend">下降趋势</option>
+                <option value="sideways">横盘趋势</option>
+              </select>
+            </div>
             
-            <div className="flex items-end gap-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">形态名称</label>
+              <input
+                type="text"
+                value={patternName}
+                onChange={(e) => setPatternName(e.target.value)}
+                placeholder="支持模糊搜索"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">信号类型</label>
+              <select
+                value={signal}
+                onChange={(e) => setSignal(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">全部</option>
+                <option value="buy">看涨</option>
+                <option value="sell">看跌</option>
+                <option value="neutral">中性</option>
+              </select>
+            </div>
+          </div>
+          
+          <div className="mt-4 flex items-center justify-between">
+            <div className="text-sm text-gray-500">
+              共 <span className="font-medium text-gray-900">{total}</span> 条记录
+            </div>
+            <div className="flex gap-2">
               <button
                 onClick={handleSearch}
                 disabled={loading}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
                 查询
               </button>
@@ -210,10 +265,6 @@ export function KLinePatternManagement() {
                 重置
               </button>
             </div>
-          </div>
-          
-          <div className="mt-4 text-sm text-gray-500">
-            共 <span className="font-medium text-gray-900">{total}</span> 条记录
           </div>
         </div>
 

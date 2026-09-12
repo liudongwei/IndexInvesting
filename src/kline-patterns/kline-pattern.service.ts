@@ -9,6 +9,7 @@ import { TrendDetectorService } from './patterns/trend-detector.service';
 import { SingleCandlePatterns } from './patterns/single-candle.pattern';
 import { TwoCandlePatterns } from './patterns/two-candle.pattern';
 import { ThreeCandlePatterns } from './patterns/three-candle.pattern';
+import { HaramiPatterns } from './patterns/harami.pattern';
 
 /**
  * K线形态分析主服务
@@ -30,6 +31,7 @@ export class KLinePatternService {
     private singleCandlePatterns: SingleCandlePatterns,
     private twoCandlePatterns: TwoCandlePatterns,
     private threeCandlePatterns: ThreeCandlePatterns,
+    private haramiPatterns: HaramiPatterns,
   ) {}
 
   /**
@@ -70,6 +72,10 @@ export class KLinePatternService {
       // 三根K线形态
       const triplePatterns = this.threeCandlePatterns.detect(candles);
       patterns.push(...triplePatterns);
+
+      // 孕线形态
+      const haramiPatterns = this.haramiPatterns.detect(candles);
+      patterns.push(...haramiPatterns);
 
       // 按置信度排序，取最高置信度的形态作为主要形态
       patterns.sort((a, b) => b.confidence - a.confidence);
@@ -163,6 +169,98 @@ export class KLinePatternService {
   }
 
   /**
+   * 获取参与K线形态计算的指数列表
+   */
+  async getParticipatingIndices(): Promise<Index[]> {
+    const indices = await this.indexRepo.find({
+      where: { 
+        isActive: true
+      }
+    });
+
+    // 过滤出 metadata.participateInKlinePattern 为 true 的指数
+    return indices.filter(index => 
+      index.metadata?.participateInKlinePattern === true
+    );
+  }
+
+  /**
+   * 批量计算K线形态（用于验证）
+   * @param indexIds 指数ID列表
+   * @param tradeDate 交易日期
+   * @returns 计算结果数组
+   */
+  async batchCalculateForVerification(
+    indexIds: string[],
+    tradeDate: Date
+  ): Promise<any[]> {
+    this.logger.log(`开始批量计算 ${indexIds.length} 个指数的K线形态，日期: ${tradeDate}`);
+
+    const results: any[] = [];
+
+    for (const indexId of indexIds) {
+      try {
+        // 获取指数信息
+        const index = await this.indexRepo.findOne({ where: { id: indexId } });
+        if (!index) {
+          results.push({
+            indexId,
+            indexName: '未知',
+            success: false,
+            error: '指数不存在'
+          });
+          continue;
+        }
+
+        // 分析K线形态
+        const analysisResult = await this.analyzeKLinePattern(indexId, tradeDate, false);
+
+        if (analysisResult) {
+          results.push({
+            indexId,
+            indexName: index.name,
+            indexCode: index.code,
+            officialCode: index.officialCode,
+            tradeDate,
+            success: true,
+            trendState: analysisResult.trendState,
+            primaryPattern: analysisResult.primaryPattern ? {
+              patternType: analysisResult.primaryPattern.patternType,
+              patternName: analysisResult.primaryPattern.patternName,
+              confidence: analysisResult.primaryPattern.confidence,
+              signal: analysisResult.primaryPattern.signal
+            } : null,
+            allPatterns: analysisResult.patterns.map(p => ({
+              patternType: p.patternType,
+              patternName: p.patternName,
+              confidence: p.confidence,
+              signal: p.signal
+            })),
+            message: '计算成功'
+          });
+        } else {
+          results.push({
+            indexId,
+            indexName: index.name,
+            success: false,
+            error: '数据不足或计算失败'
+          });
+        }
+      } catch (error) {
+        this.logger.error(`计算指数 ${indexId} 失败: ${error.message}`);
+        results.push({
+          indexId,
+          success: false,
+          error: error.message
+        });
+      }
+    }
+
+    this.logger.log('批量计算完成');
+    return results;
+  }
+
+  /**
    * 获取指定日期的K线形态分析结果
    */
   async getPatternByDate(indexId: string, tradeDate: Date, isRealtime: boolean = false): Promise<KLinePattern | null> {
@@ -197,6 +295,9 @@ export class KLinePatternService {
    * @param startDate 可选，开始日期
    * @param endDate 可选，结束日期
    * @param isRealtime 可选，是否实时数据
+   * @param trendState 可选，趋势状态
+   * @param patternName 可选，形态名称（模糊匹配）
+   * @param signal 可选，信号类型
    * @param page 页码（从1开始）
    * @param pageSize 每页条数
    */
@@ -205,6 +306,9 @@ export class KLinePatternService {
     startDate?: string,
     endDate?: string,
     isRealtime?: boolean,
+    trendState?: string,
+    patternName?: string,
+    signal?: string,
     page: number = 1,
     pageSize: number = 20
   ): Promise<{ data: KLinePattern[]; total: number; count: number }> {
@@ -225,6 +329,18 @@ export class KLinePatternService {
 
     if (isRealtime !== undefined) {
       queryBuilder.andWhere('pattern.isRealtime = :isRealtime', { isRealtime });
+    }
+
+    if (trendState) {
+      queryBuilder.andWhere('pattern.trendState = :trendState', { trendState });
+    }
+
+    if (patternName) {
+      queryBuilder.andWhere('pattern.patternName ILIKE :patternName', { patternName: `%${patternName}%` });
+    }
+
+    if (signal) {
+      queryBuilder.andWhere('pattern.signal = :signal', { signal });
     }
 
     // 获取总数

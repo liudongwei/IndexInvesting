@@ -13,6 +13,7 @@ import { BatchOperations } from './components/BatchOperations';
 import { IndexConfigManagement } from './components/IndexConfigManagement';
 import { DynamicTrendMonitoring } from './components/DynamicTrendMonitoring';
 import { KLinePatternManagement } from './components/KLinePatternManagement';
+import { KLinePatternVerification } from './components/KLinePatternVerification';
 import { getLatestRanking, getRankingByDate } from './services/api';
 import type { TrendRankingItem } from './types/trend';
 import { INDEX_TYPE, type IndexType } from './types/index-type';
@@ -312,6 +313,7 @@ function AdminLayout() {
     { path: '/admin/moving-averages', label: '均线管理', icon: '📈' },
     { path: '/admin/trend-analysis', label: '趋势分析', icon: '📉' },
     { path: '/admin/kline-patterns', label: 'K线形态', icon: '🕯️' },
+    { path: '/admin/kline-pattern-verification', label: '形态验证', icon: '🔍' },
     { path: '/admin/index-config', label: '指数配置', icon: '⚙️' },
     { path: '/admin/cron-configs', label: '定时任务', icon: '⏰' },
     { path: '/admin/batch-operations', label: '批量操作', icon: '🔧' },
@@ -370,6 +372,7 @@ function AdminLayout() {
             <Route path="moving-averages" element={<MovingAverageManagement />} />
             <Route path="trend-analysis" element={<TrendAnalysisManagement />} />
             <Route path="kline-patterns" element={<KLinePatternManagement />} />
+            <Route path="kline-pattern-verification" element={<KLinePatternVerification />} />
             <Route path="index-config" element={<IndexConfigManagement />} />
             <Route path="cron-configs" element={<CronConfig />} />
             <Route path="batch-operations" element={<BatchOperations />} />

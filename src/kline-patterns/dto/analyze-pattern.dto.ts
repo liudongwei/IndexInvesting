@@ -1,4 +1,4 @@
-import { IsUUID, IsOptional, IsBoolean, IsInt, Min, IsDateString } from 'class-validator';
+import { IsUUID, IsOptional, IsBoolean, IsInt, Min, IsDateString, IsIn } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 
 export class AnalyzePatternDto {
@@ -54,6 +54,17 @@ export class QueryPatternDto {
   })
   @IsBoolean()
   isRealtime?: boolean;
+
+  @IsOptional()
+  @IsIn(['uptrend', 'downtrend', 'sideways'], { message: '趋势状态必须是 uptrend、downtrend 或 sideways' })
+  trendState?: string;
+
+  @IsOptional()
+  patternName?: string;
+
+  @IsOptional()
+  @IsIn(['buy', 'sell', 'neutral'], { message: '信号必须是 buy、sell 或 neutral' })
+  signal?: string;
 
   @IsOptional()
   @Type(() => Number)

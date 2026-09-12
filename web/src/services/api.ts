@@ -666,6 +666,9 @@ export async function queryKLinePatterns(params?: QueryPatternParams): Promise<K
     if (params.startDate) url += `startDate=${params.startDate}&`;
     if (params.endDate) url += `endDate=${params.endDate}&`;
     if (params.isRealtime !== undefined) url += `isRealtime=${params.isRealtime}&`;
+    if (params.trendState) url += `trendState=${params.trendState}&`;
+    if (params.patternName) url += `patternName=${encodeURIComponent(params.patternName)}&`;
+    if (params.signal) url += `signal=${params.signal}&`;
     if (params.page !== undefined) url += `page=${params.page}&`;
     if (params.pageSize !== undefined) url += `pageSize=${params.pageSize}&`;
   }
@@ -679,6 +682,31 @@ export async function queryKLinePatterns(params?: QueryPatternParams): Promise<K
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.message || `查询失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * 批量计算K线形态（用于验证）
+ */
+export async function calculateKLinePatternVerify(params: {
+  tradeDate?: string;
+  indexId?: string;
+  indexIds?: string[];
+}): Promise<{
+  success: boolean;
+  message: string;
+  data: any[];
+  total: number;
+}> {
+  const response = await fetch(`${API_BASE_URL}/kline-patterns/calculate-verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `计算失败: ${response.status}`);
   }
   return response.json();
 }
