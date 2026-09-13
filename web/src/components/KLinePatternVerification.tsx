@@ -21,6 +21,12 @@ interface CalculateResult {
     patternName: string;
     confidence: number;
     signal: 'buy' | 'sell' | 'neutral';
+    description?: string;
+    metadata?: {
+      supportLevel?: number;
+      resistanceLevel?: number;
+      [key: string]: any;
+    };
   }>;
   error?: string;
   message?: string;
@@ -329,29 +335,61 @@ export function KLinePatternVerification() {
                             所有检测到的形态 ({result.allPatterns.length} 个)
                           </h4>
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {result.allPatterns.map((pattern, pIndex) => (
-                              <div
-                                key={pIndex}
-                                className="border border-gray-200 rounded-lg p-3"
-                              >
-                                <p className="text-xs text-gray-500">{pattern.patternType}</p>
-                                <p className="text-sm font-medium text-gray-900 mt-1">
-                                  {pattern.patternName}
-                                </p>
-                                <div className="flex items-center justify-between mt-2">
-                                  <span
-                                    className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                                      getSignalConfig(pattern.signal).className
-                                    }`}
-                                  >
-                                    {getSignalConfig(pattern.signal).text}
-                                  </span>
-                                  <span className="text-xs text-gray-500">
-                                    {(pattern.confidence * 100).toFixed(1)}%
-                                  </span>
+                            {result.allPatterns.map((pattern, pIndex) => {
+                              // 从 description 中提取支撑位和阻挡位
+                              const supportLevel = pattern.metadata?.supportLevel;
+                              const resistanceLevel = pattern.metadata?.resistanceLevel;
+                              
+                              return (
+                                <div
+                                  key={pIndex}
+                                  className="border border-gray-200 rounded-lg p-3"
+                                >
+                                  <p className="text-xs text-gray-500">{pattern.patternType}</p>
+                                  <p className="text-sm font-medium text-gray-900 mt-1">
+                                    {pattern.patternName}
+                                  </p>
+                                  
+                                  {/* 显示支撑位和阻挡位 */}
+                                  {(supportLevel || resistanceLevel) && (
+                                    <div className="mt-2 space-y-1">
+                                      {supportLevel && (
+                                        <div className="flex items-center justify-between text-xs">
+                                          <span className="text-green-600 font-medium">支撑位</span>
+                                          <span className="text-gray-700">{supportLevel.toFixed(2)}</span>
+                                        </div>
+                                      )}
+                                      {resistanceLevel && (
+                                        <div className="flex items-center justify-between text-xs">
+                                          <span className="text-red-600 font-medium">阻挡位</span>
+                                          <span className="text-gray-700">{resistanceLevel.toFixed(2)}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  
+                                  <div className="flex items-center justify-between mt-2">
+                                    <span
+                                      className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                                        getSignalConfig(pattern.signal).className
+                                      }`}
+                                    >
+                                      {getSignalConfig(pattern.signal).text}
+                                    </span>
+                                    <span className="text-xs text-gray-500">
+                                      {(pattern.confidence * 100).toFixed(1)}%
+                                    </span>
+                                  </div>
+                                  
+                                  {/* 显示描述 */}
+                                  {pattern.description && (
+                                    <p className="text-xs text-gray-600 mt-2 line-clamp-2">
+                                      {pattern.description}
+                                    </p>
+                                  )}
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}

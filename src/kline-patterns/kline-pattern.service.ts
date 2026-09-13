@@ -48,7 +48,7 @@ export class KLinePatternService {
   ): Promise<KLineAnalysisResult | null> {
     try {
       // 获取历史K线数据（至少需要30根用于趋势判断）
-      const candles = await this.getHistoricalCandles(indexId, tradeDate, 30);
+      const candles = await this.getHistoricalCandles(indexId, tradeDate, 100);
       
       if (!candles || candles.length < 3) {
         this.logger.warn(`指数 ${indexId} 在 ${tradeDate} 的数据不足`);
@@ -57,22 +57,26 @@ export class KLinePatternService {
 
       // 1. 趋势分析
       const trendAnalysis = this.trendDetector.analyzeTrend(candles);
-
+      
       // 2. 形态识别
       const patterns: PatternResult[] = [];
-
-      // 单根K线形态
-      const singlePatterns = this.singleCandlePatterns.detect(candles);
+      
+      // 单根 K 线形态
+      let singlePatterns = this.singleCandlePatterns.detect(candles);
+      // 根据趋势状态解析形态名称
+      singlePatterns = singlePatterns.map(pattern => 
+        this.resolvePatternByTrend(pattern, trendAnalysis.trendState)
+      ).filter(p => p !== null) as PatternResult[];
       patterns.push(...singlePatterns);
-
-      // 双根K线形态
+      
+      // 双根 K 线形态
       const doublePatterns = this.twoCandlePatterns.detect(candles);
       patterns.push(...doublePatterns);
-
-      // 三根K线形态
+      
+      // 三根 K 线形态
       const triplePatterns = this.threeCandlePatterns.detect(candles);
       patterns.push(...triplePatterns);
-
+      
       // 孕线形态
       const haramiPatterns = this.haramiPatterns.detect(candles);
       patterns.push(...haramiPatterns);
@@ -83,7 +87,9 @@ export class KLinePatternService {
 
       const result: KLineAnalysisResult = {
         tradeDate,
-        trendState: trendAnalysis.trendState as any,
+        trendState: trendAnalysis.trendState, // 保持原始趋势状态，可能在savePatternResult中被转换
+        trendScore: trendAnalysis.score,
+        trendConfidence: trendAnalysis.confidence,
         patterns,
         primaryPattern
       };
@@ -234,7 +240,9 @@ export class KLinePatternService {
               patternType: p.patternType,
               patternName: p.patternName,
               confidence: p.confidence,
-              signal: p.signal
+              signal: p.signal,
+              description: p.description,
+              metadata: p.metadata
             })),
             message: '计算成功'
           });
@@ -436,10 +444,23 @@ export class KLinePatternService {
 
     const existing = await this.getPatternByDate(indexId, tradeDate, isRealtime);
 
+    // 确保trendState是有效的枚举值，将'unknown'转换为'sideways'
+    let validTrendState: TrendState;
+    if (result.trendState === 'uptrend') {
+      validTrendState = TrendState.UPTREND;
+    } else if (result.trendState === 'downtrend') {
+      validTrendState = TrendState.DOWNTREND;
+    } else if (result.trendState === 'sideways') {
+      validTrendState = TrendState.SIDEWAYS;
+    } else {
+      // 对于'unknown'或其他无效值，默认使用'sideways'
+      validTrendState = TrendState.SIDEWAYS;
+    }
+
     const patternData: Partial<KLinePattern> = {
       indexId,
       tradeDate,
-      trendState: result.trendState as TrendState,
+      trendState: validTrendState,
       patternType: result.primaryPattern.patternType,
       patternName: result.primaryPattern.patternName,
       confidence: result.primaryPattern.confidence,
@@ -467,11 +488,11 @@ export class KLinePatternService {
   }
 
   /**
-   * 获取历史K线数据
-   * @param indexId 指数ID
+   * 获取历史 K 线数据
+   * @param indexId 指数 ID
    * @param endDate 结束日期
-   * @param count 需要的K线数量
-   * @returns K线数据数组（按时间倒序）
+   * @param count 需要的 K 线数量
+   * @returns K 线数据数组（按时间倒序）
    */
   private async getHistoricalCandles(
     indexId: string,
@@ -486,7 +507,7 @@ export class KLinePatternService {
       .take(count)
       .getMany();
 
-    // 转换为Candle格式（按时间倒序）
+    // 转换为 Candle 格式（按时间倒序）
     return histories.map(h => ({
       date: h.tradeDate,
       open: Number(h.openPrice),
@@ -495,5 +516,37 @@ export class KLinePatternService {
       close: Number(h.closePrice),
       volume: h.volume ? Number(h.volume) : null
     }));
+  }
+
+  /**
+   * 根据趋势状态解析形态的最终名称和信号
+   * @param pattern 原始形态结果
+   * @param trendState 趋势状态
+   * @returns 解析后的形态结果，如果横盘趋势则返回 null
+   */
+  private resolvePatternByTrend(pattern: PatternResult, trendState: string): PatternResult | null {
+    // 只有需要趋势上下文的形态才处理
+    if (!pattern.metadata?.needsTrendContext) {
+      return pattern;
+    }
+
+    // 横盘趋势不显示锤子线/上吊线等形态
+    if (trendState === 'sideways') {
+      return null;
+    }
+
+    const isUptrend = trendState === 'uptrend';
+    
+    // 根据趋势状态选择对应的名称和描述
+    const finalName = isUptrend ? pattern.metadata.bearishName : pattern.metadata.bullishName;
+    const finalDescription = isUptrend ? pattern.metadata.bearishDescription : pattern.metadata.bullishDescription;
+    const finalSignal = isUptrend ? 'sell' : 'buy';
+
+    return {
+      ...pattern,
+      patternName: finalName,
+      description: finalDescription,
+      signal: finalSignal
+    };
   }
 }

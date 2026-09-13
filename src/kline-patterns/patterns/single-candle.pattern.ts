@@ -2,46 +2,97 @@ import { Injectable } from '@nestjs/common';
 import { Candle, PatternResult } from '../dto/kline-pattern.dto';
 
 /**
- * 单根K线形态识别器
+ * 单根 K 线形态识别器
  * 包括：锤子线、上吊线、倒锤子线、射击之星、十字星、大阳线/大阴线
  */
 @Injectable()
 export class SingleCandlePatterns {
   
   /**
-   * 检测所有单根K线形态
-   * @param candles K线数据数组（按时间倒序，[0]为最新）
+   * 检测所有单根 K 线形态
+   * @param candles K 线数据数组（按时间倒序，[0]为最新）
    * @returns 检测到的形态列表
    */
   detect(candles: Candle[]): PatternResult[] {
     const patterns: PatternResult[] = [];
-    
+      
     if (!candles || candles.length < 1) {
       return patterns;
     }
-
+  
     const current = candles[0];
-
-    // 检测各种形态
-    const hammer = this.detectHammer(current);
-    if (hammer) patterns.push(hammer);
-
-    const hangingMan = this.detectHangingMan(current);
-    if (hangingMan) patterns.push(hangingMan);
-
-    const invertedHammer = this.detectInvertedHammer(current);
-    if (invertedHammer) patterns.push(invertedHammer);
-
-    const shootingStar = this.detectShootingStar(current);
-    if (shootingStar) patterns.push(shootingStar);
-
+  
+    // 检测十字星
     const doji = this.detectDoji(current);
     if (doji) patterns.push(doji);
-
+  
+    // 检测大阳线/大阴线
     const marubozu = this.detectMarubozu(current);
     if (marubozu) patterns.push(marubozu);
-
+  
+    // 检测锤子线/上吊线（根据趋势判断是哪种）
+    const hammerLike = this.detectHammerLike(current);
+    if (hammerLike) {
+      patterns.push(hammerLike);
+    }
+  
+    // 检测倒锤子线/射击之星（根据趋势判断是哪种）
+    const invertedHammerLike = this.detectInvertedHammerLike(current);
+    if (invertedHammerLike) {
+      patterns.push(invertedHammerLike);
+    }
+  
     return patterns;
+  }
+
+  /**
+   * 检测锤子线或上吊线形态（根据趋势决定名称）
+   * - 下降趋势：锤子线（看涨）
+   * - 上升趋势：上吊线（看跌）
+   * - 横盘趋势：不显示
+   */
+  private detectHammerLike(candle: Candle): PatternResult | null {
+    const bodySize = Math.abs(candle.close - candle.open);
+    const lowerShadow = Math.min(candle.open, candle.close) - candle.low;
+    const upperShadow = candle.high - Math.max(candle.open, candle.close);
+    const totalRange = candle.high - candle.low;
+
+    // 规则 1：下影线长度至少是实体的 2 倍
+    if (lowerShadow < bodySize * 2) {
+      return null;
+    }
+
+    // 规则 2：上影线很短或没有（不超过实体的 50%）
+    if (upperShadow > bodySize * 0.5) {
+      return null;
+    }
+
+    // 规则 3：实体位于价格区间的上部（至少 60% 位置）
+    const bodyTop = Math.max(candle.open, candle.close);
+    const bodyPosition = (bodyTop - candle.low) / totalRange;
+    if (bodyPosition < 0.6) {
+      return null;
+    }
+
+    // 计算置信度
+    const confidence = this.calculateHammerConfidence(candle, bodySize, lowerShadow, upperShadow);
+
+    // 根据信号类型决定显示什么名称（锤子线或上吊线）
+    // 这里我们统一返回看涨信号，由上层根据趋势决定最终名称
+    return {
+      patternType: 'hammer_like',
+      patternName: '锤子线/上吊线',
+      confidence,
+      signal: 'buy',
+      description: '下影线较长，表明下方有支撑',
+      metadata: {
+        needsTrendContext: true,
+        bullishName: '锤子线',
+        bearishName: '上吊线',
+        bullishDescription: '下影线较长，表明下方有支撑，潜在看涨反转信号',
+        bearishDescription: '形态同锤子线，但在上升趋势顶部出现，警示潜在下跌'
+      }
+    };
   }
 
   /**
@@ -114,56 +165,42 @@ export class SingleCandlePatterns {
   }
 
   /**
-   * 倒锤子线 (Inverted Hammer) - 看涨形态
-   * 特征：上影线较长（至少2倍实体），下影线很短或没有
-   * 出现在下降趋势底部时信号更强
+   * 检测倒锤子线或射击之星形态（根据趋势决定名称）
+   * - 下降趋势：倒锤子线（看涨）
+   * - 上升趋势：射击之星（看跌）
+   * - 横盘趋势：不显示
    */
-  private detectInvertedHammer(candle: Candle): PatternResult | null {
+  private detectInvertedHammerLike(candle: Candle): PatternResult | null {
     const bodySize = Math.abs(candle.close - candle.open);
     const upperShadow = candle.high - Math.max(candle.open, candle.close);
     const lowerShadow = Math.min(candle.open, candle.close) - candle.low;
-
-    // 规则1：上影线长度至少是实体的2倍
+  
+    // 规则 1：上影线长度至少是实体的 2 倍
     if (upperShadow < bodySize * 2) {
       return null;
     }
-
-    // 规则2：下影线很短（不超过实体的50%）
+  
+    // 规则 2：下影线很短（不超过实体的 50%）
     if (lowerShadow > bodySize * 0.5) {
       return null;
     }
-
+  
     const confidence = this.calculateInvertedHammerConfidence(candle, bodySize, upperShadow);
-
+  
+    // 根据信号类型决定显示什么名称
     return {
-      patternType: 'inverted_hammer',
-      patternName: '倒锤子线',
+      patternType: 'inverted_hammer_like',
+      patternName: '倒锤子线/射击之星',
       confidence,
       signal: 'buy',
-      description: '上影线较长，表明上方有试探，潜在看涨反转信号'
-    };
-  }
-
-  /**
-   * 射击之星 (Shooting Star) - 看跌形态
-   * 特征：与倒锤子线形态相同，但出现在上升趋势顶部
-   */
-  private detectShootingStar(candle: Candle): PatternResult | null {
-    const bodySize = Math.abs(candle.close - candle.open);
-    const upperShadow = candle.high - Math.max(candle.open, candle.close);
-    const lowerShadow = Math.min(candle.open, candle.close) - candle.low;
-
-    if (upperShadow < bodySize * 2) return null;
-    if (lowerShadow > bodySize * 0.5) return null;
-
-    const confidence = this.calculateInvertedHammerConfidence(candle, bodySize, upperShadow) * 0.9;
-
-    return {
-      patternType: 'shooting_star',
-      patternName: '射击之星',
-      confidence,
-      signal: 'sell',
-      description: '形态同倒锤子线，但在上升趋势顶部出现，警示潜在下跌'
+      description: '上影线较长，表明上方有试探',
+      metadata: {
+        needsTrendContext: true,
+        bullishName: '倒锤子线',
+        bearishName: '射击之星',
+        bullishDescription: '上影线较长，表明上方有试探，潜在看涨反转信号',
+        bearishDescription: '形态同倒锤子线，但在上升趋势顶部出现，警示潜在下跌'
+      }
     };
   }
 

@@ -10,29 +10,34 @@ export class HaramiPatterns {
   
   /**
    * 检测所有孕线形态
-   * @param candles K线数据数组（按时间倒序，[0]为最新，[1]为前一日）
+   * @param candles K 线数据数组（按时间倒序，[0]为最新，[1]为前一日）
    * @returns 检测到的形态列表
    */
   detect(candles: Candle[]): PatternResult[] {
     const patterns: PatternResult[] = [];
-    
+      
     if (!candles || candles.length < 2) {
       return patterns;
     }
-
+  
     const current = candles[0];
     const previous = candles[1];
-
-    // 检测各种形态
+  
+    // 先检测十字孕线（优先级最高）
+    const haramiDoji = this.detectHaramiDoji(previous, current);
+    if (haramiDoji) {
+      // 如果是十字孕线，只返回十字孕线，不返回普通孕线
+      patterns.push(haramiDoji);
+      return patterns;
+    }
+  
+    // 如果不是十字孕线，再检测普通孕线
     const bullishHarami = this.detectBullishHarami(previous, current);
     if (bullishHarami) patterns.push(bullishHarami);
-
+  
     const bearishHarami = this.detectBearishHarami(previous, current);
     if (bearishHarami) patterns.push(bearishHarami);
-
-    const haramiDoji = this.detectHaramiDoji(previous, current);
-    if (haramiDoji) patterns.push(haramiDoji);
-
+  
     return patterns;
   }
 
