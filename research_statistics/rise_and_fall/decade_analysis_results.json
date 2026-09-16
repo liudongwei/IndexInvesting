@@ -1,0 +1,112 @@
+[
+  {
+    "startYear": 2006,
+    "endYear": 2016,
+    "totalDays": 2662,
+    "upDays": 1440,
+    "downDays": 1221,
+    "flatDays": 1,
+    "upProbability": "54.09",
+    "downProbability": "45.87",
+    "flatProbability": "0.04"
+  },
+  {
+    "startYear": 2007,
+    "endYear": 2017,
+    "totalDays": 2665,
+    "upDays": 1421,
+    "downDays": 1243,
+    "flatDays": 1,
+    "upProbability": "53.32",
+    "downProbability": "46.64",
+    "flatProbability": "0.04"
+  },
+  {
+    "startYear": 2008,
+    "endYear": 2018,
+    "totalDays": 2666,
+    "upDays": 1375,
+    "downDays": 1290,
+    "flatDays": 1,
+    "upProbability": "51.58",
+    "downProbability": "48.39",
+    "flatProbability": "0.04"
+  },
+  {
+    "startYear": 2009,
+    "endYear": 2019,
+    "totalDays": 2664,
+    "upDays": 1394,
+    "downDays": 1269,
+    "flatDays": 1,
+    "upProbability": "52.33",
+    "downProbability": "47.64",
+    "flatProbability": "0.04"
+  },
+  {
+    "startYear": 2010,
+    "endYear": 2020,
+    "totalDays": 2663,
+    "upDays": 1373,
+    "downDays": 1289,
+    "flatDays": 1,
+    "upProbability": "51.56",
+    "downProbability": "48.40",
+    "flatProbability": "0.04"
+  },
+  {
+    "startYear": 2011,
+    "endYear": 2021,
+    "totalDays": 2664,
+    "upDays": 1378,
+    "downDays": 1286,
+    "flatDays": 0,
+    "upProbability": "51.73",
+    "downProbability": "48.27",
+    "flatProbability": "0.00"
+  },
+  {
+    "startYear": 2012,
+    "endYear": 2022,
+    "totalDays": 2662,
+    "upDays": 1375,
+    "downDays": 1287,
+    "flatDays": 0,
+    "upProbability": "51.65",
+    "downProbability": "48.35",
+    "flatProbability": "0.00"
+  },
+  {
+    "startYear": 2013,
+    "endYear": 2023,
+    "totalDays": 2661,
+    "upDays": 1362,
+    "downDays": 1299,
+    "flatDays": 0,
+    "upProbability": "51.18",
+    "downProbability": "48.82",
+    "flatProbability": "0.00"
+  },
+  {
+    "startYear": 2014,
+    "endYear": 2024,
+    "totalDays": 2665,
+    "upDays": 1368,
+    "downDays": 1297,
+    "flatDays": 0,
+    "upProbability": "51.33",
+    "downProbability": "48.67",
+    "flatProbability": "0.00"
+  },
+  {
+    "startYear": 2015,
+    "endYear": 2025,
+    "totalDays": 2663,
+    "upDays": 1373,
+    "downDays": 1290,
+    "flatDays": 0,
+    "upProbability": "51.56",
+    "downProbability": "48.44",
+    "flatProbability": "0.00"
+  }
+]

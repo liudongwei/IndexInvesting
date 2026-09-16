@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>上证指数十年跨度涨跌统计分析</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 15px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .stat-card.up {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .stat-card.down {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .stat-label {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 12px;
+            text-align: center;
+            border: 1px solid #ddd;
+        }
+        th {
+            background-color: #4CAF50;
+            color: white;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .chart-container {
+            margin: 30px 0;
+            height: 400px;
+        }
+        .summary {
+            background-color: #e8f5e8;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 5px solid #4CAF50;
+        }
+        .highlight {
+            background-color: #fff3cd;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 上证指数十年跨度涨跌统计分析 (2006-2025)</h1>
+        
+        <div class="stats-grid">
+            <div class="stat-card up">
+                <div class="stat-label">最佳上涨时期</div>
+                <div class="stat-value">54.09%</div>
+                <div>2006-2016年</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">平均上涨概率</div>
+                <div class="stat-value">52.03%</div>
+                <div>所有时期平均</div>
+            </div>
+            <div class="stat-card down">
+                <div class="stat-label">最差上涨时期</div>
+                <div class="stat-value">51.18%</div>
+                <div>2013-2023年</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="probabilityChart"></canvas>
+        </div>
+
+        <table id="dataTable">
+            <thead>
+                <tr>
+                    <th>时间跨度</th>
+                    <th>总交易日</th>
+                    <th>上涨天数</th>
+                    <th>下跌天数</th>
+                    <th>平盘天数</th>
+                    <th>上涨概率</th>
+                    <th>下跌概率</th>
+                    <th>平盘概率</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <!-- 数据将通过JavaScript插入 -->
+            </tbody>
+        </table>
+
+        <div class="summary">
+            <h3>🔍 关键发现</h3>
+            <ul>
+                <li><strong>市场特征:</strong> 总体呈现"<span class="highlight">涨多跌少</span>"的特征，所有时期的上涨概率都超过50%</li>
+                <li><strong>最佳表现:</strong> 2006-2016年间上涨概率最高，达到<span class="highlight">54.09%</span></li>
+                <li><strong>相对弱势期:</strong> 2013-2023年间上涨概率相对较低，为<span class="highlight">51.18%</span></li>
+                <li><strong>稳定性:</strong> 不同时期的上涨概率波动范围较小（51.18%-54.09%），显示市场具有一定的稳定性</li>
+                <li><strong>长期趋势:</strong> 前期时期(2006-2015)平均上涨概率为52.58%，后期时期(2016-2025)为51.49%，表明市场可能在后期波动性有所增加</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // 直接嵌入的统计数据
+        const analysisData = [
+  {
+    "startYear": 2006,
+    "endYear": 2016,
+    "totalDays": 2662,
+    "upDays": 1440,
+    "downDays": 1221,
+    "flatDays": 1,
+    "upProbability": "54.09",
+    "downProbability": "45.87",
+    "flatProbability": "0.04"
+  },
+  {
+    "startYear": 2007,
+    "endYear": 2017,
+    "totalDays": 2665,
+    "upDays": 1421,
+    "downDays": 1243,
+    "flatDays": 1,
+    "upProbability": "53.32",
+    "downProbability": "46.64",
+    "flatProbability": "0.04"
+  },
+  {
+    "startYear": 2008,
+    "endYear": 2018,
+    "totalDays": 2666,
+    "upDays": 1375,
+    "downDays": 1290,
+    "flatDays": 1,
+    "upProbability": "51.58",
+    "downProbability": "48.39",
+    "flatProbability": "0.04"
+  },
+  {
+    "startYear": 2009,
+    "endYear": 2019,
+    "totalDays": 2664,
+    "upDays": 1394,
+    "downDays": 1269,
+    "flatDays": 1,
+    "upProbability": "52.33",
+    "downProbability": "47.64",
+    "flatProbability": "0.04"
+  },
+  {
+    "startYear": 2010,
+    "endYear": 2020,
+    "totalDays": 2663,
+    "upDays": 1373,
+    "downDays": 1289,
+    "flatDays": 1,
+    "upProbability": "51.56",
+    "downProbability": "48.40",
+    "flatProbability": "0.04"
+  },
+  {
+    "startYear": 2011,
+    "endYear": 2021,
+    "totalDays": 2664,
+    "upDays": 1378,
+    "downDays": 1286,
+    "flatDays": 0,
+    "upProbability": "51.73",
+    "downProbability": "48.27",
+    "flatProbability": "0.00"
+  },
+  {
+    "startYear": 2012,
+    "endYear": 2022,
+    "totalDays": 2662,
+    "upDays": 1375,
+    "downDays": 1287,
+    "flatDays": 0,
+    "upProbability": "51.65",
+    "downProbability": "48.35",
+    "flatProbability": "0.00"
+  },
+  {
+    "startYear": 2013,
+    "endYear": 2023,
+    "totalDays": 2661,
+    "upDays": 1362,
+    "downDays": 1299,
+    "flatDays": 0,
+    "upProbability": "51.18",
+    "downProbability": "48.82",
+    "flatProbability": "0.00"
+  },
+  {
+    "startYear": 2014,
+    "endYear": 2024,
+    "totalDays": 2665,
+    "upDays": 1368,
+    "downDays": 1297,
+    "flatDays": 0,
+    "upProbability": "51.33",
+    "downProbability": "48.67",
+    "flatProbability": "0.00"
+  },
+  {
+    "startYear": 2015,
+    "endYear": 2025,
+    "totalDays": 2663,
+    "upDays": 1373,
+    "downDays": 1290,
+    "flatDays": 0,
+    "upProbability": "51.56",
+    "downProbability": "48.44",
+    "flatProbability": "0.00"
+  }
+];
+
+        // 使用内嵌数据填充表格和图表
+        window.addEventListener('DOMContentLoaded', function() {
+            // 填充表格
+            const tbody = document.getElementById('tableBody');
+            analysisData.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><strong>${item.startYear}-${item.endYear}</strong></td>
+                    <td>${item.totalDays}</td>
+                    <td style="color: #4CAF50; font-weight: bold;">${item.upDays}</td>
+                    <td style="color: #f44336; font-weight: bold;">${item.downDays}</td>
+                    <td>${item.flatDays}</td>
+                    <td><span class="highlight">${item.upProbability}%</span></td>
+                    <td>${item.downProbability}%</td>
+                    <td>${item.flatProbability}%</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            // 创建图表
+            const ctx = document.getElementById('probabilityChart').getContext('2d');
+            const labels = analysisData.map(item => `${item.startYear}-${item.endYear}`);
+            const upProbabilities = analysisData.map(item => parseFloat(item.upProbability));
+            const downProbabilities = analysisData.map(item => parseFloat(item.downProbability));
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '上涨概率 (%)',
+                        data: upProbabilities,
+                        borderColor: '#4CAF50',
+                        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                        tension: 0.4,
+                        yAxisID: 'y'
+                    }, {
+                        label: '下跌概率 (%)',
+                        data: downProbabilities,
+                        borderColor: '#f44336',
+                        backgroundColor: 'rgba(244, 67, 54, 0.1)',
+                        tension: 0.4,
+                        yAxisID: 'y'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '不同十年跨期的涨跌概率变化趋势',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        legend: {
+                            position: 'top',
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            min: 45,
+                            max: 60,
+                            title: {
+                                display: true,
+                                text: '概率 (%)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: '时间跨度'
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
