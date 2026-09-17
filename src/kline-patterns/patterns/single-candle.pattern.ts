@@ -3,7 +3,7 @@ import { Candle, PatternResult } from '../dto/kline-pattern.dto';
 
 /**
  * 单根 K 线形态识别器
- * 包括：锤子线、上吊线、倒锤子线、射击之星、十字星、大阳线/大阴线
+ * 包括：十字星、捉腰带线（看涨/看跌）、锤子线、上吊线、倒锤子线、射击之星、大阳线/大阴线
  */
 @Injectable()
 export class SingleCandlePatterns {
@@ -25,6 +25,13 @@ export class SingleCandlePatterns {
     // 检测十字星
     const doji = this.detectDoji(current);
     if (doji) patterns.push(doji);
+  
+    // 检测捉腰带形态（优先于锤子线等）
+    const longLeggedDoji = this.detectLongLeggedDoji(current);
+    if (longLeggedDoji) {
+      patterns.push(longLeggedDoji);
+      return patterns; // 如果检测到捉腰带，不再检测其他类似形态
+    }
   
     // 检测大阳线/大阴线
     const marubozu = this.detectMarubozu(current);
@@ -202,6 +209,113 @@ export class SingleCandlePatterns {
         bearishDescription: '形态同倒锤子线，但在上升趋势顶部出现，警示潜在下跌'
       }
     };
+  }
+
+  /**
+   * 捉腰带形态 (Long Legged Doji) - 反转信号
+   * 包括：看涨捉腰带线和看跌捉腰带线
+   * 
+   * 看涨捉腰带线特征：
+   * 1. 开盘价位于或接近最低价
+   * 2. 收盘价位于或接近最高价
+   * 3. 收阳线
+   * 4. 实体很长，几乎没有上下影线
+   * 
+   * 看跌捉腰带线特征：
+   * 1. 开盘价位于或接近最高价
+   * 2. 收盘价位于或接近最低价
+   * 3. 收阴线
+   * 4. 实体很长，几乎没有上下影线
+   * 
+   * 注意：捉腰带蜡烛线越长，技术意义越重大
+   */
+  private detectLongLeggedDoji(candle: Candle): PatternResult | null {
+    const bodySize = Math.abs(candle.close - candle.open);
+    const upperShadow = candle.high - Math.max(candle.open, candle.close);
+    const lowerShadow = Math.min(candle.open, candle.close) - candle.low;
+    const totalRange = candle.high - candle.low;
+
+    // 实体必须很大（至少占整个范围的80%）
+    if (bodySize < totalRange * 0.8) {
+      return null;
+    }
+
+    const isOpenAtLow = Math.abs(candle.open - candle.low) / totalRange < 0.05;
+    const isCloseAtHigh = Math.abs(candle.close - candle.high) / totalRange < 0.05;
+    const isOpenAtHigh = Math.abs(candle.open - candle.high) / totalRange < 0.05;
+    const isCloseAtLow = Math.abs(candle.close - candle.low) / totalRange < 0.05;
+
+    // 检测看涨捉腰带线：开盘≈最低，收盘≈最高，阳线
+    if (candle.close > candle.open && isOpenAtLow && isCloseAtHigh) {
+      const confidence = this.calculateLongLeggedDojiConfidence(candle, 'bullish');
+      
+      const supportLevel = candle.low; // 支撑位在最低价
+      const resistanceLevel = candle.high; // 阻挡位在最高价
+
+      return {
+        patternType: 'bullish_long_legged_doji',
+        patternName: '看涨捉腰带线',
+        confidence,
+        signal: 'buy',
+        description: `开盘价接近最低价，收盘价接近最高价，长阳线，强烈看涨信号。支撑位：${supportLevel.toFixed(2)}，阻挡位：${resistanceLevel.toFixed(2)}`,
+        metadata: {
+          supportLevel,
+          resistanceLevel
+        }
+      };
+    }
+
+    // 检测看跌捉腰带线：开盘≈最高，收盘≈最低，阴线
+    if (candle.close < candle.open && isOpenAtHigh && isCloseAtLow) {
+      const confidence = this.calculateLongLeggedDojiConfidence(candle, 'bearish');
+      
+      const resistanceLevel = candle.high; // 阻挡位在最高价
+      const supportLevel = candle.low; // 支撑位在最低价
+
+      return {
+        patternType: 'bearish_long_legged_doji',
+        patternName: '看跌捉腰带线',
+        confidence,
+        signal: 'sell',
+        description: `开盘价接近最高价，收盘价接近最低价，长阴线，强烈看跌信号。阻挡位：${resistanceLevel.toFixed(2)}，支撑位：${supportLevel.toFixed(2)}`,
+        metadata: {
+          resistanceLevel,
+          supportLevel
+        }
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * 计算捉腰带形态的置信度
+   * 捉腰带蜡烛线越长，置信度越高
+   */
+  private calculateLongLeggedDojiConfidence(
+    candle: Candle,
+    type: 'bullish' | 'bearish'
+  ): number {
+    let confidence = 0.8; // 基础置信度（比普通形态高）
+
+    const bodySize = Math.abs(candle.close - candle.open);
+    const totalRange = candle.high - candle.low;
+    
+    // 实体占比越大，置信度越高
+    const bodyToTotalRatio = bodySize / totalRange;
+    if (bodyToTotalRatio > 0.9) confidence += 0.15; // 极长的实体
+    else if (bodyToTotalRatio > 0.85) confidence += 0.1;
+    else if (bodyToTotalRatio > 0.8) confidence += 0.05;
+
+    // 影线越短，置信度越高
+    const upperShadow = candle.high - Math.max(candle.open, candle.close);
+    const lowerShadow = Math.min(candle.open, candle.close) - candle.low;
+    
+    if (upperShadow < bodySize * 0.02 && lowerShadow < bodySize * 0.02) {
+      confidence += 0.05; // 几乎光头光脚
+    }
+
+    return Math.min(1, confidence);
   }
 
   /**
