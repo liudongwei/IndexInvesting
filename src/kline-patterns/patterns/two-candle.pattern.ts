@@ -40,6 +40,10 @@ export class TwoCandlePatterns {
       const piercingPattern = this.detectPiercingPattern(previous, current);
       if (piercingPattern) patterns.push(piercingPattern);
     }
+
+    // 检测向上跳空两只乌鸦形态
+    const upsideGapTwoCrows = this.detectUpsideGapTwoCrows(candles);
+    if (upsideGapTwoCrows) patterns.push(upsideGapTwoCrows);
   
     return patterns;
   }
@@ -300,5 +304,86 @@ export class TwoCandlePatterns {
     // TODO: 当有成交量数据时可以加分
 
     return Math.min(1, confidence);
+  }
+
+  /**
+   * 向上跳空两只乌鸦形态 (Upside Gap Two Crows) - 看跌信号
+   * 特征：
+   * 1. 第一日是阳线
+   * 2. 第二日跳空高开，收阴线
+   * 3. 第三日继续收阴线，且收盘价低于第二日收盘价
+   * 4. 表示上升趋势可能反转，空头开始占据优势
+   * 
+   * 注意：此形态需要3根K线来确认，但在双K线形态中检测前两根
+   */
+  private detectUpsideGapTwoCrows(candles: Candle[]): PatternResult | null {
+    if (candles.length < 3) {
+      return null;
+    }
+
+    const current = candles[0];   // 最新一根（第三日）
+    const previous = candles[1];  // 前一日（第二日）
+    const twoDaysAgo = candles[2]; // 前两日（第一日）
+
+    // 规则1：第一日是阳线
+    if (twoDaysAgo.close <= twoDaysAgo.open) {
+      return null;
+    }
+
+    // 规则2：第二日跳空高开（开盘价高于第一日最高价）
+    if (previous.open <= twoDaysAgo.high) {
+      return null;
+    }
+
+    // 规则3：第二日是阴线
+    if (previous.close >= previous.open) {
+      return null;
+    }
+
+    // 规则4：第三日继续收阴线
+    if (current.close >= current.open) {
+      return null;
+    }
+
+    // 规则5：第三日收盘价低于第二日收盘价（持续下跌）
+    if (current.close >= previous.close) {
+      return null;
+    }
+
+    // 规则6：第二日的跳空缺口在第三日未被完全回补（增强信号可靠性）
+    // 如果第三日最低价仍高于第一日最高价，则缺口依然存在
+    const gapExists = current.low > twoDaysAgo.high;
+
+    // 计算置信度
+    let confidence = 0.7; // 基础置信度
+    
+    // 跳空幅度越大，置信度越高
+    const gapSize = (previous.open - twoDaysAgo.high) / twoDaysAgo.high;
+    if (gapSize > 0.02) confidence += 0.1; // 跳空超过2%
+    
+    // 如果缺口仍然存在，增加置信度
+    if (gapExists) confidence += 0.1;
+
+    // 连续阴线的跌幅越大，置信度越高
+    const declineRate = (previous.close - current.close) / previous.close;
+    if (declineRate > 0.02) confidence += 0.05;
+
+    // 计算阻挡位：第二日的最高价
+    const resistanceLevel = Math.max(previous.high, twoDaysAgo.high);
+    // 计算支撑位：第三日的最低价
+    const supportLevel = Math.min(current.low, previous.low);
+
+    return {
+      patternType: 'upside_gap_two_crows',
+      patternName: '向上跳空两只乌鸦',
+      confidence: Math.min(1, confidence),
+      signal: 'sell',
+      description: `上升趋势中跳空高开后连续两根阴线，看跌反转信号。阻挡位：${resistanceLevel.toFixed(2)}，支撑位：${supportLevel.toFixed(2)}`,
+      metadata: {
+        resistanceLevel,
+        supportLevel,
+        gapExists
+      }
+    };
   }
 }
