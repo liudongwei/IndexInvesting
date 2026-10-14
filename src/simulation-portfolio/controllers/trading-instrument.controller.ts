@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   Query,
+  BadRequestException,
 } from '@nestjs/common';
 import { TradingInstrumentService } from '../services/trading-instrument.service';
 import { CreateInstrumentDto } from '../dto/create-instrument.dto';
@@ -54,7 +55,14 @@ export class TradingInstrumentController {
 
   @Put(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateInstrumentDto) {
-    return this.instrumentService.update(id, dto);
+    try {
+      return await this.instrumentService.update(id, dto);
+    } catch (error: any) {
+      if (error.message?.includes('已被其他标的使用')) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
   }
 
   @Delete(':id')

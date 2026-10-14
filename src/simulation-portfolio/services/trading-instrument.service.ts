@@ -79,8 +79,20 @@ export class TradingInstrumentService {
    */
   async update(id: string, dto: UpdateInstrumentDto): Promise<TradingInstrument> {
     const instrument = await this.findOne(id);
-    Object.assign(instrument, dto);
-    return await this.instrumentRepository.save(instrument);
+    
+    // 检查 code 是否被修改，如果被修改则检查是否与其他记录冲突
+    if (dto.code && dto.code !== instrument.code) {
+      const existingWithCode = await this.instrumentRepository.findOne({
+        where: { code: dto.code },
+      });
+      if (existingWithCode && existingWithCode.id !== id) {
+        throw new Error(`交易代码 ${dto.code} 已被其他标的使用`);
+      }
+    }
+    
+    // 使用 merge 方法确保实体被正确追踪
+    const updatedInstrument = this.instrumentRepository.merge(instrument, dto);
+    return await this.instrumentRepository.save(updatedInstrument);
   }
 
   /**
