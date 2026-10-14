@@ -13,6 +13,7 @@ import { TrendAnalysisModule } from './trend-analysis/trend-analysis.module';
 import { CronConfigModule } from './cron-config/cron-config.module';
 import { DynamicTrendModule } from './dynamic-trend/dynamic-trend.module';
 import { KLinePatternsModule } from './kline-patterns/kline-patterns.module';
+import { SimulationPortfolioModule } from './simulation-portfolio/simulation-portfolio.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { KLinePatternsModule } from './kline-patterns/kline-patterns.module';
     CronConfigModule,
     DynamicTrendModule,
     KLinePatternsModule,
+    SimulationPortfolioModule,
   ],
   controllers: [AppController],
   providers: [AppService],

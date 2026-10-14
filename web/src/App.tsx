@@ -14,6 +14,8 @@ import { IndexConfigManagement } from './components/IndexConfigManagement';
 import { DynamicTrendMonitoring } from './components/DynamicTrendMonitoring';
 import { KLinePatternManagement } from './components/KLinePatternManagement';
 import { KLinePatternVerification } from './components/KLinePatternVerification';
+import { SimulationDashboard } from './components/SimulationDashboard';
+import { TradingInstrumentManagement } from './components/TradingInstrumentManagement';
 import { getLatestRanking, getRankingByDate } from './services/api';
 import type { TrendRankingItem } from './types/trend';
 import { INDEX_TYPE, type IndexType } from './types/index-type';
@@ -28,6 +30,7 @@ function Navbar() {
   const isEastmoney = location.pathname === '/eastmoney-import';
   const isDynamicTrend = location.pathname === '/dynamic-trend';
   const isKLinePatterns = location.pathname === '/kline-patterns';
+  const isSimulation = location.pathname.startsWith('/simulation');
   const isAdmin = location.pathname.startsWith('/admin');
 
   return (
@@ -74,6 +77,14 @@ function Navbar() {
               }`}
             >
               东财数据导入
+            </button>
+            <button
+              onClick={() => navigate('/simulation/dashboard')}
+              className={`text-sm font-medium transition-colors ${
+                isSimulation ? 'text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              模拟交易
             </button>
           </div>
           <div className="flex items-center gap-4">
@@ -314,6 +325,7 @@ function AdminLayout() {
     { path: '/admin/trend-analysis', label: '趋势分析', icon: '📉' },
     { path: '/admin/kline-patterns', label: 'K线形态', icon: '🕯️' },
     { path: '/admin/kline-pattern-verification', label: '形态验证', icon: '🔍' },
+    { path: '/admin/trading-instruments', label: '交易标的', icon: '💼' },
     { path: '/admin/index-config', label: '指数配置', icon: '⚙️' },
     { path: '/admin/cron-configs', label: '定时任务', icon: '⏰' },
     { path: '/admin/batch-operations', label: '批量操作', icon: '🔧' },
@@ -373,6 +385,7 @@ function AdminLayout() {
             <Route path="trend-analysis" element={<TrendAnalysisManagement />} />
             <Route path="kline-patterns" element={<KLinePatternManagement />} />
             <Route path="kline-pattern-verification" element={<KLinePatternVerification />} />
+            <Route path="trading-instruments" element={<TradingInstrumentManagement />} />
             <Route path="index-config" element={<IndexConfigManagement />} />
             <Route path="cron-configs" element={<CronConfig />} />
             <Route path="batch-operations" element={<BatchOperations />} />
@@ -399,6 +412,7 @@ function AppContent() {
         <Route path="/dynamic-trend" element={<DynamicTrendMonitoring />} />
         <Route path="/kline-patterns" element={<KLinePatternManagement />} />
         <Route path="/eastmoney-import" element={<EastmoneyImportPage />} />
+        <Route path="/simulation/dashboard" element={<SimulationDashboard />} />
         <Route path="/index/:indexId" element={<IndexDetail />} />
         <Route path="/admin/*" element={<AdminLayout />} />
       </Routes>
