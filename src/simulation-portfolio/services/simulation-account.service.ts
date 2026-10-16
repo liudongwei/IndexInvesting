@@ -25,12 +25,19 @@ export class SimulationAccountService {
 
   /**
    * 根据ID查询账户
+   * @param id 账户ID
+   * @param loadRelations 是否加载关联数据（positions, trades）
    */
-  async findOne(id: string): Promise<SimulationAccount> {
-    const account = await this.accountRepository.findOne({
+  async findOne(id: string, loadRelations: boolean = false): Promise<SimulationAccount> {
+    const options: any = {
       where: { id },
-      relations: ['positions'] as any,
-    });
+    };
+    
+    if (loadRelations) {
+      options.relations = ['positions', 'trades'];
+    }
+    
+    const account = await this.accountRepository.findOne(options);
     if (!account) {
       throw new Error(`账户 ${id} 不存在`);
     }

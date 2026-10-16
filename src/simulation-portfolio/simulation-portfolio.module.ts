@@ -13,6 +13,7 @@ import { SimulationTradeService } from './services/simulation-trade.service';
 import { PositionUpdateService } from './services/position-update.service';
 import { TradingInstrumentController } from './controllers/trading-instrument.controller';
 import { SimulationPortfolioController } from './controllers/simulation-portfolio.controller';
+import { SimulationAccountAdminController } from './controllers/simulation-account-admin.controller';
 import { SimulationCronService } from './simulation-cron.service';
 
 @Module({
@@ -37,6 +38,7 @@ import { SimulationCronService } from './simulation-cron.service';
   controllers: [
     TradingInstrumentController,
     SimulationPortfolioController,
+    SimulationAccountAdminController,
   ],
   exports: [
     TradingInstrumentService,

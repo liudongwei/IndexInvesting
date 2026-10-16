@@ -14,6 +14,7 @@ import { KLinePatternService } from '../kline-patterns/kline-pattern.service';
 import { Index } from '../indices/entities/index.entity';
 import { KLinePatternCronService } from '../kline-patterns/kline-pattern-cron.service';
 import { KLinePattern } from '../kline-patterns/entities/kline-pattern.entity';
+import { PositionUpdateService } from '../simulation-portfolio/services/position-update.service';
 
 // 预定义的 Cron 任务配置
 export const DEFAULT_CRON_CONFIGS: Partial<CronConfig>[] = [
@@ -137,6 +138,31 @@ export const DEFAULT_CRON_CONFIGS: Partial<CronConfig>[] = [
     category: 'K线形态',
     isEnabled: true,
   },
+  // 模拟交易任务
+  {
+    taskName: 'simulationPositionUpdateMorning',
+    cronExpression: '*/5 9-11 * * 1-5',
+    displayName: '模拟持仓更新(早盘)',
+    description: '工作日上午9:00-11:30，每5分钟更新模拟持仓价格和账户统计',
+    category: '模拟交易',
+    isEnabled: true,
+  },
+  {
+    taskName: 'simulationPositionUpdateAfternoon',
+    cronExpression: '*/5 13-15 * * 1-5',
+    displayName: '模拟持仓更新(午盘)',
+    description: '工作日下午13:00-15:00，每5分钟更新模拟持仓价格和账户统计',
+    category: '模拟交易',
+    isEnabled: true,
+  },
+  {
+    taskName: 'simulationDailyProfitCalculation',
+    cronExpression: '30 15 * * 1-5',
+    displayName: '模拟日终盈亏计算',
+    description: '每个交易日15:30执行，计算模拟账户当日盈亏并生成快照',
+    category: '模拟交易',
+    isEnabled: true,
+  },
 ];
 
 @Injectable()
@@ -153,6 +179,7 @@ export class CronConfigService implements OnModuleInit {
     private dynamicTrendService: DynamicTrendService,
     private klinePatternService: KLinePatternService,
     private klinePatternCronService: KLinePatternCronService,
+    private positionUpdateService: PositionUpdateService,
   ) {}
 
   async onModuleInit() {
@@ -275,6 +302,13 @@ export class CronConfigService implements OnModuleInit {
         return this.klinePatternCronService.handleRealtimeAnalysis();
       case 'klinePatternCleanRealtime':
         return this.klinePatternService.cleanTodayRealtimeData();
+
+      // 模拟交易任务
+      case 'simulationPositionUpdateMorning':
+      case 'simulationPositionUpdateAfternoon':
+        return this.positionUpdateService.updatePositionsRealTime();
+      case 'simulationDailyProfitCalculation':
+        return this.positionUpdateService.calculateTodayProfit();
 
       default:
         throw new Error(`未知的任务名称: ${taskName}`);

@@ -103,6 +103,16 @@ src/simulation-portfolio/services/
 ✅ POST   /bulk-import               - 批量导入
 ```
 
+**Admin 接口（交易账户管理）**
+```typescript
+@Controller('admin/simulation-accounts')
+✅ POST   /                          - 创建账户
+✅ GET    /                          - 分页查询（支持状态筛选）
+✅ GET    /:id                       - 查询详情
+✅ PUT    /:id                       - 更新账户
+✅ DELETE /:id                       - 删除账户（软删除）
+```
+
 **Web 接口（交易功能）**
 ```typescript
 @Controller('simulation/portfolio')
@@ -119,6 +129,34 @@ src/simulation-portfolio/services/
 - ✅ `SimulationPortfolioModule` 已创建
 - ✅ 已在 `app.module.ts` 中注册
 - ✅ 所有 Entity、Service、Controller 已正确配置
+
+---
+
+### 🎨 Phase 6: 前端管理页面（100%）
+
+#### Admin 管理页面
+
+**1. 交易账户管理页面** (`web/src/components/SimulationAccountManagement.tsx`)
+- ✅ 账户列表展示（分页、搜索、状态筛选）
+- ✅ 新增账户（模态框表单）
+- ✅ 编辑账户（模态框表单）
+- ✅ 删除账户（软删除，确认提示）
+- ✅ 实时统计显示（总资产、总盈亏、收益率等）
+- ✅ 策略类型标签（网格交易、右侧趋势、左侧逆向、自定义）
+- ✅ 账户状态管理（运行中、已暂停、已关闭）
+
+**2. 交易标的管理页面** (`web/src/components/TradingInstrumentManagement.tsx`)
+- ✅ 标的列表展示（分页、搜索、类型筛选）
+- ✅ 新增标的（模态框表单）
+- ✅ 编辑标的（模态框表单）
+- ✅ 删除标的（确认提示）
+- ✅ 支持ETF、股票、可转债三种类型
+
+#### 菜单集成
+- ✅ 在 [App.tsx](file:///d:/wwwroot/nodejs_wwwroot/IndexInvesting/web/src/App.tsx) 中添加“交易账户”菜单项
+- ✅ 路由配置：`/admin/simulation-accounts`
+- ✅ 图标：👛
+- ✅ 位置：交易标的之后，指数配置之前
 
 ---
 
@@ -156,7 +194,7 @@ src/simulation-portfolio/simulation-cron.service.ts
 
 ## 📂 文件清单
 
-### 后端文件（共 23 个）
+### 后端文件（共 27 个）
 
 ```
 src/simulation-portfolio/
@@ -168,10 +206,12 @@ src/simulation-portfolio/
 │   ├── simulation-daily-snapshot.entity.ts
 │   └── simulation-task-log.entity.ts
 │
-├── dto/                                (3个)
+├── dto/                                (5个)
 │   ├── create-instrument.dto.ts
 │   ├── update-instrument.dto.ts
-│   └── trade-stock.dto.ts
+│   ├── trade-stock.dto.ts
+│   ├── create-account.dto.ts           ← 新增
+│   └── update-account.dto.ts           ← 新增
 │
 ├── services/                           (4个)
 │   ├── trading-instrument.service.ts
@@ -179,9 +219,10 @@ src/simulation-portfolio/
 │   ├── simulation-trade.service.ts
 │   └── position-update.service.ts
 │
-├── controllers/                        (2个)
+├── controllers/                        (3个)
 │   ├── trading-instrument.controller.ts
-│   └── simulation-portfolio.controller.ts
+│   ├── simulation-portfolio.controller.ts
+│   └── simulation-account-admin.controller.ts  ← 新增
 │
 ├── simulation-portfolio.module.ts      (1个)
 ├── simulation-cron.service.ts          (1个)
@@ -190,6 +231,14 @@ src/simulation-portfolio/
 migrations/                             (2个)
 ├── create_simulation_tables.sql
 └── insert_simulation_cron_config.sql
+```
+
+### 前端文件（共 2 个）
+
+```
+web/src/components/
+├── TradingInstrumentManagement.tsx     (交易标的管理)
+└── SimulationAccountManagement.tsx     ← 新增（交易账户管理）
 ```
 
 ---
@@ -351,9 +400,13 @@ WHERE id = '账户UUID';
 - ✅ 7张数据库表
 - ✅ 6个 TypeORM Entity
 - ✅ 4个核心 Service
-- ✅ 2个 Controller（14个 API 接口）
+- ✅ 3个 Controller（19个 API 接口）
+  - 交易标的管理：7个接口
+  - 交易账户管理：5个接口 ← 新增
+  - Web交易功能：7个接口
 - ✅ 3个定时任务
 - ✅ 完整的文档
+- ✅ 2个前端管理页面 ← 新增
 
 **系统已具备生产环境部署条件！**
 

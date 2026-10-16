@@ -58,7 +58,8 @@ export function TradingInstrumentManagement() {
   const loadInstruments = async () => {
     try {
       setLoading(true);
-      let url = `http://localhost:3000/api/admin/trading-instruments?page=${page}&limit=${limit}`;
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+      let url = `${baseUrl}/admin/trading-instruments?page=${page}&limit=${limit}`;
       if (filterType) {
         url += `&type=${filterType}`;
       }
@@ -85,7 +86,8 @@ export function TradingInstrumentManagement() {
 
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:3000/api/admin/trading-instruments/search?keyword=${searchTerm}`);
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+      const response = await fetch(`${baseUrl}/admin/trading-instruments/search?keyword=${searchTerm}`);
       const data = await response.json();
       setInstruments(data || []);
       setTotal(data?.length || 0);
@@ -150,7 +152,8 @@ export function TradingInstrumentManagement() {
   // 提交新增
   const handleSubmitAdd = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/admin/trading-instruments', {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+      const response = await fetch(`${baseUrl}/admin/trading-instruments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
@@ -189,7 +192,8 @@ export function TradingInstrumentManagement() {
         status: formData.status,
       };
 
-      const response = await fetch(`http://localhost:3000/api/admin/trading-instruments/${editingInstrument.id}`, {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+      const response = await fetch(`${baseUrl}/admin/trading-instruments/${editingInstrument.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData),
@@ -216,7 +220,8 @@ export function TradingInstrumentManagement() {
     }
 
     try {
-      const response = await fetch(`http://localhost:3000/api/admin/trading-instruments/${id}`, {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+      const response = await fetch(`${baseUrl}/admin/trading-instruments/${id}`, {
         method: 'DELETE',
       });
 

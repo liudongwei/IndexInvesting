@@ -71,4 +71,11 @@ export class SimulationPortfolioController {
     // TODO: 实现快照查询
     return { message: '快照功能待实现' };
   }
+
+  // ========== 实时价格查询 ==========
+
+  @Get('realtime-price/:tencentCode')
+  async getRealTimePrice(@Param('tencentCode') tencentCode: string) {
+    return this.tradeService.getRealTimePrice(tencentCode);
+  }
 }

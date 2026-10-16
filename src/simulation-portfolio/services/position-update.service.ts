@@ -35,7 +35,7 @@ export class PositionUpdateService {
       // 1. 获取所有活跃持仓
       const positions = await this.positionRepository.find({
         where: { quantity: MoreThan(0) },
-        relations: ['instrument'] as any,
+        relations: { instrument: true },
       });
 
       if (positions.length === 0) {
@@ -88,11 +88,27 @@ export class PositionUpdateService {
       const duration = Date.now() - startTime;
       this.logger.log(`更新完成：更新${updatedCount}条持仓，耗时${duration}ms`);
 
-      // 4. 记录任务日志
+      // 4. 重新计算所有受影响账户的统计数据
+      const affectedAccountIds = [...new Set(positions.map((p) => p.accountId))];
+      let updatedAccounts = 0;
+
+      for (const accountId of affectedAccountIds) {
+        try {
+          await this.updateAccountStatistics(accountId);
+          updatedAccounts++;
+        } catch (error) {
+          this.logger.error(`更新账户 ${accountId} 统计失败: ${error.message}`);
+        }
+      }
+
+      this.logger.log(`账户统计更新完成：更新${updatedAccounts}个账户`);
+
+      // 5. 记录任务日志
       await this.taskLogRepository.save({
         taskType: 'position_update_5min',
         executeTime: new Date(),
         positionsUpdated: updatedCount,
+        accountsProcessed: updatedAccounts,
         status: 'success',
         durationMs: duration,
       });
@@ -131,7 +147,7 @@ export class PositionUpdateService {
           // 2. 获取持仓
           const positions = await this.positionRepository.find({
             where: { accountId: account.id, quantity: MoreThan(0) },
-            relations: ['instrument'] as any,
+            relations: { instrument: true },
           });
 
           let totalPositionValue = 0;
@@ -266,5 +282,78 @@ export class PositionUpdateService {
       this.logger.error(`获取腾讯API数据失败: ${symbol}, ${error.message}`);
       throw error;
     }
+  }
+
+  /**
+   * 更新账户统计数据
+   */
+  private async updateAccountStatistics(accountId: string): Promise<void> {
+    // 1. 查询账户信息
+    const account = await this.accountRepository.findOne({
+      where: { id: accountId },
+    });
+
+    if (!account) {
+      this.logger.warn(`账户 ${accountId} 不存在`);
+      return;
+    }
+
+    // 2. 查询该账户所有持仓
+    const positions = await this.positionRepository.find({
+      where: { accountId, quantity: MoreThan(0) },
+    });
+
+    // 3. 计算总市值
+    let totalPositionValue = 0;
+    for (const position of positions) {
+      const posQty = typeof position.quantity === 'string' ? parseFloat(position.quantity) : position.quantity;
+      const posPrice = typeof position.currentPrice === 'string' ? parseFloat(position.currentPrice) : position.currentPrice;
+      totalPositionValue += posQty * posPrice;
+    }
+
+    // 4. 计算今日盈亏
+    // 今日盈亏 = 当前总资产 - 上次快照时的总资产
+    let todayProfit = 0;
+    try {
+      // 查询最新的快照（最好是昨日收盘后的）
+      const latestSnapshot = await this.snapshotRepository.findOne({
+        where: { accountId },
+        order: { snapshotDate: 'DESC' },
+      });
+
+      if (latestSnapshot) {
+        // 今日盈亏 = 当前总资产 - 快照时的总资产
+        const currentBalance = typeof account.currentBalance === 'string' ? parseFloat(account.currentBalance) : account.currentBalance;
+        const currentTotalAssets = currentBalance + totalPositionValue;
+        const snapshotTotalAssets = typeof latestSnapshot.totalAssets === 'string' 
+          ? parseFloat(latestSnapshot.totalAssets) 
+          : latestSnapshot.totalAssets;
+        todayProfit = currentTotalAssets - snapshotTotalAssets;
+      } else {
+        // 如果没有快照，今日盈亏为 0
+        todayProfit = 0;
+      }
+    } catch (error) {
+      this.logger.error(`计算今日盈亏失败: ${error.message}`);
+      todayProfit = 0;
+    }
+
+    // 5. 更新账户统计
+    const currentBalance = typeof account.currentBalance === 'string' ? parseFloat(account.currentBalance) : account.currentBalance;
+    const initialCapital = typeof account.initialCapital === 'string' ? parseFloat(account.initialCapital) : account.initialCapital;
+    
+    account.positionValue = totalPositionValue;
+    account.totalAssets = currentBalance + totalPositionValue;
+    account.totalProfit = account.totalAssets - initialCapital;
+    account.totalProfitRate = initialCapital > 0 ? (account.totalProfit / initialCapital) * 100 : 0;
+    
+    // 更新今日盈亏
+    account.todayProfit = todayProfit;
+    const assetsBeforeTodayProfit = currentBalance + totalPositionValue - todayProfit;
+    account.todayProfitRate = assetsBeforeTodayProfit > 0
+      ? (todayProfit / assetsBeforeTodayProfit) * 100
+      : 0;
+
+    await this.accountRepository.save(account);
   }
 }

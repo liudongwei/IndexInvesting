@@ -1,10 +1,27 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+// 格式化数字（支持字符串和数字类型）
+const formatNumber = (num: any, decimals: number = 2): string => {
+  if (num === null || num === undefined) return '0.00';
+  const numValue = typeof num === 'string' ? parseFloat(num) : num;
+  if (isNaN(numValue)) return '0.00';
+  return numValue.toFixed(decimals);
+};
+
+// 判断数值是否大于等于0（支持字符串和数字类型）
+const isPositive = (num: any): boolean => {
+  if (num === null || num === undefined) return true;
+  const numValue = typeof num === 'string' ? parseFloat(num) : num;
+  return numValue >= 0;
+};
 
 /**
  * 模拟交易仪表盘
  * 展示多账户概览和快速操作
  */
 export function SimulationDashboard() {
+  const navigate = useNavigate();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
@@ -16,7 +33,8 @@ export function SimulationDashboard() {
   const loadAccounts = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3000/api/simulation/portfolio/accounts');
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+      const response = await fetch(`${baseUrl}/simulation/portfolio/accounts`);
       const data = await response.json();
       setAccounts(data);
       if (data.length > 0 && !selectedAccountId) {
@@ -100,45 +118,79 @@ export function SimulationDashboard() {
                       <div className="space-y-3">
                         <div>
                           <p className="text-sm text-gray-500">总资产</p>
-                          <p className="text-2xl font-bold text-gray-900">
-                            ¥{account.totalAssets?.toFixed(2) || '0.00'}
+                          <p className={`text-2xl font-bold ${
+                            parseFloat(String(account.totalAssets)) > 0 ? 'text-gray-900' : 'text-gray-400'
+                          }`}>
+                            ¥{formatNumber(account.totalAssets)}
                           </p>
+                          {parseFloat(String(account.totalAssets)) === 0 && (
+                            <p className="text-xs text-gray-400 mt-1">暂无交易数据</p>
+                          )}
                         </div>
-
+                      
                         <div>
                           <p className="text-sm text-gray-500">今日盈亏</p>
                           <p className={`text-xl font-semibold ${
-                            (account.todayProfit || 0) >= 0 ? 'text-red-600' : 'text-green-600'
+                            isPositive(account.todayProfit) ? 'text-red-600' : 'text-green-600'
                           }`}>
-                            {(account.todayProfit || 0) >= 0 ? '+' : ''}
-                            ¥{(account.todayProfit || 0).toFixed(2)}
+                            {isPositive(account.todayProfit) ? '+' : ''}
+                            ¥{formatNumber(account.todayProfit)}
                             <span className="text-sm ml-1">
-                              ({(account.todayProfitRate || 0).toFixed(2)}%)
+                              ({formatNumber(account.todayProfitRate)}%)
                             </span>
                           </p>
                         </div>
-
+                      
                         <div>
                           <p className="text-sm text-gray-500">累计盈亏</p>
                           <p className={`text-lg font-semibold ${
-                            (account.totalProfit || 0) >= 0 ? 'text-red-600' : 'text-green-600'
+                            isPositive(account.totalProfit) ? 'text-red-600' : 'text-green-600'
                           }`}>
-                            {(account.totalProfit || 0) >= 0 ? '+' : ''}
-                            ¥{(account.totalProfit || 0).toFixed(2)}
+                            {isPositive(account.totalProfit) ? '+' : ''}
+                            ¥{formatNumber(account.totalProfit)}
                             <span className="text-sm ml-1">
-                              ({(account.totalProfitRate || 0).toFixed(2)}%)
+                              ({formatNumber(account.totalProfitRate)}%)
                             </span>
                           </p>
                         </div>
-
+                      
                         <div className="pt-3 border-t border-gray-200">
                           <div className="flex justify-between text-sm">
                             <span className="text-gray-500">现金余额</span>
-                            <span className="font-medium">¥{account.currentBalance?.toFixed(2)}</span>
+                            <span className="font-medium">¥{formatNumber(account.currentBalance)}</span>
                           </div>
                           <div className="flex justify-between text-sm mt-1">
                             <span className="text-gray-500">持仓市值</span>
-                            <span className="font-medium">¥{account.positionValue?.toFixed(2)}</span>
+                            <span className={`font-medium ${
+                              parseFloat(String(account.positionValue)) > 0 ? 'text-gray-900' : 'text-gray-400'
+                            }`}>
+                              ¥{formatNumber(account.positionValue)}
+                            </span>
+                          </div>
+                          {parseFloat(String(account.positionValue)) === 0 && (
+                            <p className="text-xs text-gray-400 mt-1">当前无持仓</p>
+                          )}
+                        </div>
+
+                        {/* 新增：交易统计 */}
+                        <div className="pt-3 border-t border-gray-200">
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <p className="text-gray-500">买入次数</p>
+                              <p className="font-medium text-gray-900">{account.totalBuyCount || 0}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500">卖出次数</p>
+                              <p className="font-medium text-gray-900">{account.totalSellCount || 0}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500">累计佣金</p>
+                              <p className="font-medium text-gray-900">¥{formatNumber(account.totalCommission)}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500">初始资金</p>
+                              <p className="font-medium text-gray-900">¥{formatNumber(account.initialCapital)}</p>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -152,19 +204,19 @@ export function SimulationDashboard() {
               <h3 className="text-lg font-semibold text-gray-900 mb-4">快捷操作</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <button
-                  onClick={() => window.location.href = '/simulation/buy'}
+                  onClick={() => navigate('/simulation/buy')}
                   className="px-6 py-4 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
                 >
                   💰 买入股票
                 </button>
                 <button
-                  onClick={() => window.location.href = '/simulation/positions'}
+                  onClick={() => navigate('/simulation/positions')}
                   className="px-6 py-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
                 >
                   📊 查看持仓
                 </button>
                 <button
-                  onClick={() => window.location.href = '/simulation/trades'}
+                  onClick={() => navigate('/simulation/trades')}
                   className="px-6 py-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
                 >
                   📜 交易记录

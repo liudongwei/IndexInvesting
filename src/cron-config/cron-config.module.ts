@@ -10,6 +10,7 @@ import { TrendAnalysisModule } from '../trend-analysis/trend-analysis.module';
 import { DynamicTrendModule } from '../dynamic-trend/dynamic-trend.module';
 import { KLinePatternsModule } from '../kline-patterns/kline-patterns.module';
 import { KLinePatternCronService } from '../kline-patterns/kline-pattern-cron.service';
+import { SimulationPortfolioModule } from '../simulation-portfolio/simulation-portfolio.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { KLinePatternCronService } from '../kline-patterns/kline-pattern-cron.se
     forwardRef(() => TrendAnalysisModule),
     forwardRef(() => DynamicTrendModule),
     forwardRef(() => KLinePatternsModule),
+    forwardRef(() => SimulationPortfolioModule),
   ],
   controllers: [CronConfigController],
   providers: [CronConfigService],

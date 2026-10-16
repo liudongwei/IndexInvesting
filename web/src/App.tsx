@@ -15,7 +15,11 @@ import { DynamicTrendMonitoring } from './components/DynamicTrendMonitoring';
 import { KLinePatternManagement } from './components/KLinePatternManagement';
 import { KLinePatternVerification } from './components/KLinePatternVerification';
 import { SimulationDashboard } from './components/SimulationDashboard';
+import { SimulationBuy } from './components/SimulationBuy';
+import { SimulationPositions } from './components/SimulationPositions';
+import { SimulationTrades } from './components/SimulationTrades';
 import { TradingInstrumentManagement } from './components/TradingInstrumentManagement';
+import { SimulationAccountManagement } from './components/SimulationAccountManagement';
 import { getLatestRanking, getRankingByDate } from './services/api';
 import type { TrendRankingItem } from './types/trend';
 import { INDEX_TYPE, type IndexType } from './types/index-type';
@@ -326,6 +330,7 @@ function AdminLayout() {
     { path: '/admin/kline-patterns', label: 'K线形态', icon: '🕯️' },
     { path: '/admin/kline-pattern-verification', label: '形态验证', icon: '🔍' },
     { path: '/admin/trading-instruments', label: '交易标的', icon: '💼' },
+    { path: '/admin/simulation-accounts', label: '交易账户', icon: '👛' },
     { path: '/admin/index-config', label: '指数配置', icon: '⚙️' },
     { path: '/admin/cron-configs', label: '定时任务', icon: '⏰' },
     { path: '/admin/batch-operations', label: '批量操作', icon: '🔧' },
@@ -386,6 +391,7 @@ function AdminLayout() {
             <Route path="kline-patterns" element={<KLinePatternManagement />} />
             <Route path="kline-pattern-verification" element={<KLinePatternVerification />} />
             <Route path="trading-instruments" element={<TradingInstrumentManagement />} />
+            <Route path="simulation-accounts" element={<SimulationAccountManagement />} />
             <Route path="index-config" element={<IndexConfigManagement />} />
             <Route path="cron-configs" element={<CronConfig />} />
             <Route path="batch-operations" element={<BatchOperations />} />
@@ -413,6 +419,9 @@ function AppContent() {
         <Route path="/kline-patterns" element={<KLinePatternManagement />} />
         <Route path="/eastmoney-import" element={<EastmoneyImportPage />} />
         <Route path="/simulation/dashboard" element={<SimulationDashboard />} />
+        <Route path="/simulation/buy" element={<SimulationBuy />} />
+        <Route path="/simulation/positions" element={<SimulationPositions />} />
+        <Route path="/simulation/trades" element={<SimulationTrades />} />
         <Route path="/index/:indexId" element={<IndexDetail />} />
         <Route path="/admin/*" element={<AdminLayout />} />
       </Routes>
