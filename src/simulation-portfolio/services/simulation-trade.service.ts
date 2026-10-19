@@ -213,16 +213,7 @@ export class SimulationTradeService {
       throw new Error('持仓不存在');
     }
 
-    // 3. 检查可用数量
-    let availableQty = Number(position.availableQuantity);
-
-    if (availableQty < quantity) {
-      throw new Error(
-        `可用持仓不足：可用${availableQty}股，卖出${quantity}股${instrument.tradingRule === 'T+1' ? '（受T+1限制）' : ''}`,
-      );
-    }
-
-    // 4. 获取实时价格
+    // 3. 获取实时价格
     const realTimeData = await this.getTencentRealTimeQuote(instrument.tencentCode);
     const currentPrice = realTimeData.currentPrice;
 
@@ -230,21 +221,14 @@ export class SimulationTradeService {
       throw new Error('无法获取实时价格');
     }
 
-    // 5. 查询账户
+    // 4. 查询账户
     const account = await this.accountService.findOne(accountId);
 
-    // 6. 计算金额和手续费（确保数值类型）
-    const amount = currentPrice * quantity;
-    const commissionRate = typeof account.commissionRate === 'string' ? parseFloat(account.commissionRate) : account.commissionRate;
-    const minCommission = typeof account.minCommission === 'string' ? parseFloat(account.minCommission) : account.minCommission;
-    const commission = Math.max(amount * commissionRate, minCommission);
-    const netProceeds = amount - commission;
-
-    // 7. 计算盈亏（avgCost已包含买入佣金，这里只扣除卖出佣金）
-    const profit = (currentPrice - Number(position.avgCost)) * quantity - commission;
-
-    // 8. T+1规则检查（在事务外）
+    // 5. 计算可用数量（考虑 T+1 规则）
+    let availableQty = Number(position.availableQuantity);
+    
     if (instrument.tradingRule === 'T+1') {
+      // 查询今日买入的数量
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       
@@ -258,8 +242,26 @@ export class SimulationTradeService {
         .getRawOne();
 
       const boughtToday = Number(todayBuys?.total || 0);
+      // T+1 规则：可用数量 = 总持仓 - 今日买入
       availableQty = Number(position.quantity) - boughtToday;
     }
+
+    // 6. 检查可用数量
+    if (availableQty < quantity) {
+      throw new Error(
+        `可用持仓不足：可用${availableQty}股，卖出${quantity}股${instrument.tradingRule === 'T+1' ? '（受T+1限制）' : ''}`,
+      );
+    }
+
+    // 7. 计算金额和手续费（确保数值类型）
+    const amount = currentPrice * quantity;
+    const commissionRate = typeof account.commissionRate === 'string' ? parseFloat(account.commissionRate) : account.commissionRate;
+    const minCommission = typeof account.minCommission === 'string' ? parseFloat(account.minCommission) : account.minCommission;
+    const commission = Math.max(amount * commissionRate, minCommission);
+    const netProceeds = amount - commission;
+
+    // 8. 计算盈亏（avgCost已包含买入佣金，这里只扣除卖出佣金）
+    const profit = (currentPrice - Number(position.avgCost)) * quantity - commission;
 
     // 9. 开启事务
     const queryRunner = this.dataSource.createQueryRunner();
@@ -272,7 +274,17 @@ export class SimulationTradeService {
 
       // 10. 更新持仓
       position.quantity = Number(position.quantity) - quantity;
-      position.availableQuantity = Number(position.availableQuantity) - quantity;
+      
+      // 对于 T+1 标的，availableQuantity 应该等于 quantity（因为当日买入的会被冻结）
+      // 但对于非 T+1 标的，availableQuantity 直接减少
+      if (instrument.tradingRule === 'T+1') {
+        // T+1: availableQuantity 保持与 quantity 一致（简化处理）
+        // 实际可用数量在卖出时通过查询今日买入来动态计算
+        position.availableQuantity = position.quantity;
+      } else {
+        // 非 T+1: 直接减少可用数量
+        position.availableQuantity = Number(position.availableQuantity) - quantity;
+      }
 
       if (position.quantity === 0) {
         // 清仓

@@ -202,12 +202,18 @@ export function SimulationDashboard() {
             {/* 快捷操作 */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">快捷操作</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <button
                   onClick={() => navigate('/simulation/buy')}
                   className="px-6 py-4 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
                 >
                   💰 买入股票
+                </button>
+                <button
+                  onClick={() => navigate('/simulation/sell')}
+                  className="px-6 py-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+                >
+                  💸 卖出股票
                 </button>
                 <button
                   onClick={() => navigate('/simulation/positions')}
@@ -217,7 +223,7 @@ export function SimulationDashboard() {
                 </button>
                 <button
                   onClick={() => navigate('/simulation/trades')}
-                  className="px-6 py-4 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+                  className="px-6 py-4 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors"
                 >
                   📜 交易记录
                 </button>

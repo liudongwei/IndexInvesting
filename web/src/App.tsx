@@ -16,6 +16,7 @@ import { KLinePatternManagement } from './components/KLinePatternManagement';
 import { KLinePatternVerification } from './components/KLinePatternVerification';
 import { SimulationDashboard } from './components/SimulationDashboard';
 import { SimulationBuy } from './components/SimulationBuy';
+import { SimulationSell } from './components/SimulationSell';
 import { SimulationPositions } from './components/SimulationPositions';
 import { SimulationTrades } from './components/SimulationTrades';
 import { TradingInstrumentManagement } from './components/TradingInstrumentManagement';
@@ -420,6 +421,7 @@ function AppContent() {
         <Route path="/eastmoney-import" element={<EastmoneyImportPage />} />
         <Route path="/simulation/dashboard" element={<SimulationDashboard />} />
         <Route path="/simulation/buy" element={<SimulationBuy />} />
+        <Route path="/simulation/sell" element={<SimulationSell />} />
         <Route path="/simulation/positions" element={<SimulationPositions />} />
         <Route path="/simulation/trades" element={<SimulationTrades />} />
         <Route path="/index/:indexId" element={<IndexDetail />} />
