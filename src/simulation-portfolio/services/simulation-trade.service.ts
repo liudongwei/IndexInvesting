@@ -8,9 +8,7 @@ import { SimulationAccount } from '../entities/simulation-account.entity';
 import { BuyStockDto, SellStockDto } from '../dto/trade-stock.dto';
 import { SimulationAccountService } from './simulation-account.service';
 import { TradingInstrumentService } from './trading-instrument.service';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
-import { SimulationDailySnapshot } from '../entities/simulation-daily-snapshot.entity';
+import { AccountAssetsService } from './account-assets.service';
 
 @Injectable()
 export class SimulationTradeService {
@@ -21,12 +19,10 @@ export class SimulationTradeService {
     private positionRepository: Repository<SimulationPosition>,
     @InjectRepository(SimulationTrade)
     private tradeRepository: Repository<SimulationTrade>,
-    @InjectRepository(SimulationDailySnapshot)
-    private snapshotRepository: Repository<SimulationDailySnapshot>,
     private dataSource: DataSource,
     private accountService: SimulationAccountService,
     private instrumentService: TradingInstrumentService,
-    private httpService: HttpService,
+    private accountAssets: AccountAssetsService,
   ) {}
 
   /**
@@ -38,9 +34,9 @@ export class SimulationTradeService {
     // 1. 查询标的信息
     const instrument = await this.instrumentService.findByCode(instrumentCode);
 
-    // 2. 获取实时价格（腾讯 API）
-    const realTimeData = await this.getTencentRealTimeQuote(instrument.tencentCode);
-    const currentPrice = realTimeData.currentPrice;
+    // 2. 获取实时价格（腾讯 API）；同时缓存行情，供今日盈亏计算复用（含昨收）
+    const quotes = await this.accountAssets.fetchQuotes([instrument.tencentCode]);
+    const currentPrice = quotes.get(instrument.tencentCode)?.price;
 
     if (!currentPrice || currentPrice <= 0) {
       throw new Error('无法获取实时价格');
@@ -140,35 +136,11 @@ export class SimulationTradeService {
       account.totalBuyCount += 1;
       const currentCommission = typeof account.totalCommission === 'string' ? parseFloat(account.totalCommission) : account.totalCommission;
       account.totalCommission = currentCommission + commission;
-      
-      // 10.1 重新计算账户资产统计 - 查询所有持仓的总市值
-      const updatedBalance = typeof account.currentBalance === 'string' ? parseFloat(String(account.currentBalance)) : account.currentBalance;
-      
-      // 查询该账户所有持仓，计算总市值
-      const allPositions = await queryRunner.manager.find(SimulationPosition, {
-        where: { accountId },
-      });
-      
-      let totalPositionValue = 0;
-      for (const pos of allPositions) {
-        const posQty = typeof pos.quantity === 'string' ? parseFloat(pos.quantity) : pos.quantity;
-        const posPrice = typeof pos.currentPrice === 'string' ? parseFloat(pos.currentPrice) : pos.currentPrice;
-        totalPositionValue += posQty * posPrice;
-      }
-      
-      account.positionValue = totalPositionValue;
-      account.totalAssets = updatedBalance + totalPositionValue;
-      account.totalProfit = account.totalAssets - (typeof account.initialCapital === 'string' ? parseFloat(account.initialCapital) : account.initialCapital);
-      const initialCapital = typeof account.initialCapital === 'string' ? parseFloat(account.initialCapital) : account.initialCapital;
-      account.totalProfitRate = initialCapital > 0 ? (account.totalProfit / initialCapital) * 100 : 0;
-      
-      // 计算今日盈亏
-      const todayProfit = await this.calculateTodayProfit(queryRunner, accountId, updatedBalance, totalPositionValue);
-      account.todayProfit = todayProfit;
-      const assetsBeforeTodayProfit = updatedBalance + totalPositionValue - todayProfit;
-      account.todayProfitRate = assetsBeforeTodayProfit > 0 ? (todayProfit / assetsBeforeTodayProfit) * 100 : 0;
-      
-      await queryRunner.manager.save(account);
+
+      // 10.1 统一重算资产与今日盈亏
+      // 以昨收为基准，今日买入份额按成交价计入，并扣除当日费用，
+      // 因此买入瞬间不会出现「持仓市值被当成盈利」的假盈利。
+      await this.accountAssets.recalcAccount(queryRunner.manager, account, quotes);
 
       // 11. 提交事务
       await queryRunner.commitTransaction();
@@ -213,9 +185,9 @@ export class SimulationTradeService {
       throw new Error('持仓不存在');
     }
 
-    // 3. 获取实时价格
-    const realTimeData = await this.getTencentRealTimeQuote(instrument.tencentCode);
-    const currentPrice = realTimeData.currentPrice;
+    // 3. 获取实时价格（含昨收，用于今日盈亏）
+    const quotes = await this.accountAssets.fetchQuotes([instrument.tencentCode]);
+    const currentPrice = quotes.get(instrument.tencentCode)?.price;
 
     if (!currentPrice || currentPrice <= 0) {
       throw new Error('无法获取实时价格');
@@ -299,37 +271,9 @@ export class SimulationTradeService {
       account.totalSellCount += 1;
       const currentCommission = typeof account.totalCommission === 'string' ? parseFloat(account.totalCommission) : account.totalCommission;
       account.totalCommission = currentCommission + commission;
-      
-      // 11.1 重新计算账户资产统计 - 查询所有持仓的总市值
-      const updatedBalance = typeof account.currentBalance === 'string' ? parseFloat(String(account.currentBalance)) : account.currentBalance;
-      
-      // 查询该账户所有持仓，计算总市值
-      const allPositions = await queryRunner.manager.find(SimulationPosition, {
-        where: { accountId },
-      });
-      
-      let totalPositionValue = 0;
-      for (const pos of allPositions) {
-        const posQty = typeof pos.quantity === 'string' ? parseFloat(pos.quantity) : pos.quantity;
-        const posPrice = typeof pos.currentPrice === 'string' ? parseFloat(pos.currentPrice) : pos.currentPrice;
-        totalPositionValue += posQty * posPrice;
-      }
-      
-      account.positionValue = totalPositionValue;
-      account.totalAssets = updatedBalance + account.positionValue;
-      account.totalProfit = account.totalAssets - (typeof account.initialCapital === 'string' ? parseFloat(account.initialCapital) : account.initialCapital);
-      const initialCapital = typeof account.initialCapital === 'string' ? parseFloat(account.initialCapital) : account.initialCapital;
-      account.totalProfitRate = initialCapital > 0 ? (account.totalProfit / initialCapital) * 100 : 0;
-      
-      // 计算今日盈亏
-      const todayProfit = await this.calculateTodayProfit(queryRunner, accountId, updatedBalance, totalPositionValue);
-      account.todayProfit = todayProfit;
-      const assetsBeforeTodayProfit = updatedBalance + totalPositionValue - todayProfit;
-      account.todayProfitRate = assetsBeforeTodayProfit > 0 ? (todayProfit / assetsBeforeTodayProfit) * 100 : 0;
-      
-      await queryRunner.manager.save(account);
 
       // 12. 记录交易
+      // 必须早于资产重算：今日盈亏要读取当日成交流水（卖出均价、当日费用）
       const trade = queryRunner.manager.create(SimulationTrade, {
         accountId,
         instrumentId: instrument.id,
@@ -345,7 +289,11 @@ export class SimulationTradeService {
       });
       await queryRunner.manager.save(trade);
 
-      // 13. 提交事务
+      // 13. 统一重算资产与今日盈亏
+      // 卖出份额按「卖出均价 − 昨收」计入今日已实现盈亏，费用从今日盈亏中扣除。
+      await this.accountAssets.recalcAccount(queryRunner.manager, account, quotes);
+
+      // 14. 提交事务
       await queryRunner.commitTransaction();
 
       return {
@@ -371,66 +319,57 @@ export class SimulationTradeService {
   }
 
   /**
-   * 获取腾讯API实时行情
-   */
-  private async getTencentRealTimeQuote(symbol: string): Promise<any> {
-    try {
-      const url = `https://qt.gtimg.cn/q=${symbol}`;
-      const response = await firstValueFrom(
-        this.httpService.get(url, {
-          timeout: 10000,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            Referer: 'https://gu.qq.com/',
-          },
-        }),
-      );
-
-      const text = response.data as string;
-      const match = text.match(/="([^"]+)"/);
-      if (!match) {
-        throw new Error('解析腾讯API数据失败');
-      }
-
-      const fields = match[1].split('~');
-
-      return {
-        symbol,
-        name: fields[1],
-        currentPrice: parseFloat(fields[3]),
-        open: parseFloat(fields[5]),
-        high: parseFloat(fields[30]),
-        low: parseFloat(fields[31]),
-        close: parseFloat(fields[4]),
-        volume: parseFloat(fields[6]),
-        timestamp: new Date(),
-      };
-    } catch (error) {
-      this.logger.error(`获取腾讯API数据失败: ${symbol}, ${error.message}`);
-      throw error;
-    }
-  }
-
-  /**
    * 获取实时行情（公开方法）
    */
   async getRealTimePrice(tencentCode: string): Promise<{ price: number; name: string }> {
-    const data = await this.getTencentRealTimeQuote(tencentCode);
+    const quotes = await this.accountAssets.fetchQuotes([tencentCode]);
+    const quote = quotes.get(tencentCode);
+    if (!quote) {
+      throw new Error(`无法获取实时价格: ${tencentCode}`);
+    }
     return {
-      price: data.currentPrice,
-      name: data.name,
+      price: quote.price,
+      name: quote.name,
     };
   }
 
   /**
-   * 查询账户持仓列表
+   * 获取账户持仓列表
+   *
+   * 对 T+1 品种的 availableQuantity 做实时重算（总持仓 − 今日买入）：
+   * 库中的 availableQuantity 在 T+1 解冻后可能长期停在 0，
+   * 卖出页据此过滤会误判"无可用持仓"，故在读取时按真实口径刷新。
    */
   async getPositionList(accountId: string): Promise<SimulationPosition[]> {
-    return await this.positionRepository.find({
+    const positions = await this.positionRepository.find({
       where: { accountId },
       relations: { instrument: true },
       order: { createdAt: 'DESC' },
     });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const boughtToday = await this.tradeRepository
+      .createQueryBuilder('t')
+      .andWhere('t.account_id = :acc', { acc: accountId })
+      .andWhere('DATE(t.trade_date) = :td', { td: today })
+      .andWhere('t.trade_type = :tradeType', { tradeType: TradeType.BUY })
+      .getMany();
+    const boughtTodayMap = new Map<string, number>();
+    for (const t of boughtToday) {
+      boughtTodayMap.set(t.instrumentId, (boughtTodayMap.get(t.instrumentId) || 0) + Number(t.quantity));
+    }
+
+    for (const p of positions) {
+      if (p.instrument?.tradingRule === 'T+1') {
+        const frozen = boughtTodayMap.get(p.instrumentId) || 0;
+        p.availableQuantity = Math.max(0, Number(p.quantity) - frozen);
+        p.frozenQuantity = frozen;
+      } else {
+        p.availableQuantity = Number(p.quantity);
+        p.frozenQuantity = 0;
+      }
+    }
+    return positions;
   }
 
   /**
@@ -446,36 +385,26 @@ export class SimulationTradeService {
   }
 
   /**
-   * 计算今日盈亏（私有方法）
-   * 今日盈亏 = 当前总资产 - 上次快照时的总资产
+   * 手动重算指定账户的资产与今日盈亏（用于前端刷新 / 排障）
    */
-  private async calculateTodayProfit(
-    queryRunner: any,
-    accountId: string,
-    currentBalance: number,
-    totalPositionValue: number,
-  ): Promise<number> {
-    try {
-      // 查询最新的快照
-      const latestSnapshot = await queryRunner.manager.findOne(SimulationDailySnapshot, {
-        where: { accountId },
-        order: { snapshotDate: 'DESC' },
-      });
-
-      if (latestSnapshot) {
-        // 今日盈亏 = 当前总资产 - 快照总资产
-        const currentTotalAssets = currentBalance + totalPositionValue;
-        const snapshotTotalAssets = typeof latestSnapshot.totalAssets === 'string'
-          ? parseFloat(latestSnapshot.totalAssets)
-          : latestSnapshot.totalAssets;
-        return currentTotalAssets - snapshotTotalAssets;
-      } else {
-        // 如果没有快照，今日盈亏为 0
-        return 0;
-      }
-    } catch (error) {
-      this.logger.error(`计算今日盈亏失败: ${error.message}`);
-      return 0;
-    }
+  async recalculateAccount(accountId: string): Promise<any> {
+    const account = await this.accountService.findOne(accountId);
+    const stats = await this.accountAssets.recalcAccount(
+      this.dataSource.manager,
+      account,
+    );
+    return {
+      success: true,
+      message: '账户资产已重算',
+      data: {
+        positionValue: stats.positionValue,
+        totalAssets: stats.totalAssets,
+        totalProfit: stats.totalProfit,
+        totalProfitRate: stats.totalProfitRate,
+        todayProfit: stats.todayProfit,
+        todayProfitRate: stats.todayProfitRate,
+        startAssets: stats.startAssets,
+      },
+    };
   }
 }

@@ -11,6 +11,7 @@ import { TradingInstrumentService } from './services/trading-instrument.service'
 import { SimulationAccountService } from './services/simulation-account.service';
 import { SimulationTradeService } from './services/simulation-trade.service';
 import { PositionUpdateService } from './services/position-update.service';
+import { AccountAssetsService } from './services/account-assets.service';
 import { TradingInstrumentController } from './controllers/trading-instrument.controller';
 import { SimulationPortfolioController } from './controllers/simulation-portfolio.controller';
 import { SimulationAccountAdminController } from './controllers/simulation-account-admin.controller';
@@ -31,6 +32,7 @@ import { SimulationCronService } from './simulation-cron.service';
   providers: [
     TradingInstrumentService,
     SimulationAccountService,
+    AccountAssetsService,
     SimulationTradeService,
     PositionUpdateService,
     SimulationCronService,

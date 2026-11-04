@@ -78,4 +78,11 @@ export class SimulationPortfolioController {
   async getRealTimePrice(@Param('tencentCode') tencentCode: string) {
     return this.tradeService.getRealTimePrice(tencentCode);
   }
+
+  // ========== 资产重算（刷新今日盈亏） ==========
+
+  @Post('recalculate/:accountId')
+  async recalculate(@Param('accountId') accountId: string) {
+    return this.tradeService.recalculateAccount(accountId);
+  }
 }

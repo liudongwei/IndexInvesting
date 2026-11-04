@@ -81,16 +81,15 @@ export function SimulationSell() {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
       const response = await fetch(`${baseUrl}/simulation/portfolio/positions/${selectedAccountId}`);
       const data = await response.json();
-      // 只显示有可用数量的持仓（处理字符串类型的数值）
-      const availablePositions = (data || []).filter((p: Position) => {
-        const availQty = typeof p.availableQuantity === 'string' 
-          ? parseFloat(p.availableQuantity) 
-          : p.availableQuantity;
-        return availQty > 0;
+      // 显示有实际持仓的标的（quantity>0）。可用数量由后端按 T+1 口径实时返回，
+      // 此处不再用 availableQuantity 过滤，避免 T+1 解冻前误判"无可用持仓"。
+      const activePositions = (data || []).filter((p: Position) => {
+        const q = typeof p.quantity === 'string' ? parseFloat(p.quantity) : Number(p.quantity);
+        return q > 0;
       });
-      setPositions(availablePositions);
-      if (availablePositions.length > 0) {
-        setSelectedPositionId(availablePositions[0].id);
+      setPositions(activePositions);
+      if (activePositions.length > 0) {
+        setSelectedPositionId(activePositions[0].id);
       }
     } catch (error) {
       console.error('加载持仓失败:', error);
