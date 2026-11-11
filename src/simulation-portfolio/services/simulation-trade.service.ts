@@ -78,17 +78,15 @@ export class SimulationTradeService {
       const balanceBefore = currentBalance + totalCost;
 
       if (position) {
-        // 已有持仓：加权平均成本（确保数值运算）
-        const oldAvgCost = typeof position.avgCost === 'string' ? parseFloat(position.avgCost) : position.avgCost;
-        const oldQty = Number(position.quantity);
-        const oldCost = oldAvgCost * oldQty;
-        const newCost = amount + commission; // 新成本包含佣金
-        const newQty = oldQty + quantity;
-        position.avgCost = (oldCost + newCost) / newQty; // 成本价包含佣金
-        position.quantity = newQty;
-        
+        // 已有持仓：成本动态累加（券商口径）
+        // 总成本含买入佣金，总卖出所得含已扣卖出佣金的净回款
         const currentTotalCost = typeof position.totalCost === 'string' ? parseFloat(position.totalCost) : position.totalCost;
+        const currentTotalSell = typeof position.totalSell === 'string' ? parseFloat(position.totalSell) : position.totalSell;
+        const newQty = Number(position.quantity) + quantity;
         position.totalCost = currentTotalCost + amount + commission; // 总成本包含佣金
+        position.quantity = newQty;
+        // 动态成本价 = (累计买入 − 累计卖出所得) / 当前持股，盈利卖出后摊低，亏损卖出后抬高
+        position.avgCost = (position.totalCost - currentTotalSell) / newQty;
         
         // T+1规则：当日买入的份额不可用
         if (instrument.tradingRule === 'T+1') {
@@ -108,6 +106,7 @@ export class SimulationTradeService {
           availableQuantity: instrument.tradingRule === 'T+1' ? 0 : quantity, // T+1当日不可用
           avgCost: (amount + commission) / quantity, // 成本价包含佣金
           totalCost: amount + commission, // 总成本包含佣金
+          totalSell: 0,
           currentPrice,
           marketValue: amount,
           lastBuyDate: new Date(),
@@ -246,6 +245,10 @@ export class SimulationTradeService {
 
       // 10. 更新持仓
       position.quantity = Number(position.quantity) - quantity;
+
+      // 券商式动态成本：累计卖出所得（净回款 = 成交金额 − 卖出佣金）
+      // 浮盈卖出 → 成本下降；亏损止损卖出 → 成本上升
+      position.totalSell = (Number(position.totalSell) || 0) + netProceeds;
       
       // 对于 T+1 标的，availableQuantity 应该等于 quantity（因为当日买入的会被冻结）
       // 但对于非 T+1 标的，availableQuantity 直接减少
@@ -259,9 +262,12 @@ export class SimulationTradeService {
       }
 
       if (position.quantity === 0) {
-        // 清仓
+        // 清仓（position 行删除；重新买入时按新仓位重新计成本）
         await queryRunner.manager.remove(position);
       } else {
+        // 动态成本价 = (累计买入 − 累计卖出所得) / 剩余持股
+        const totalCost = Number(position.totalCost);
+        position.avgCost = (totalCost - Number(position.totalSell)) / position.quantity;
         position.lastSellDate = new Date();
         await queryRunner.manager.save(position);
       }

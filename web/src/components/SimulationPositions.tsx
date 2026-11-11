@@ -174,6 +174,7 @@ export function SimulationPositions() {
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">成本价</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">现价</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">市值</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">仓位百分比</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">浮动盈亏</th>
                   </tr>
                 </thead>
@@ -202,6 +203,16 @@ export function SimulationPositions() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-900">
                         ¥{formatNumber(position.marketValue)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-900">
+                        {(() => {
+                          const marketValue = parseFloat(String(position.marketValue));
+                          const percent =
+                            totalMarketValue > 0
+                              ? (marketValue / totalMarketValue) * 100
+                              : 0;
+                          return `${percent.toFixed(2)}%`;
+                        })()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <div className={`text-sm font-medium ${isPositive(position.floatProfit) ? 'text-red-600' : 'text-green-600'}`}>

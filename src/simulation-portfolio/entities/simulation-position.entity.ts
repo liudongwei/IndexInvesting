@@ -70,6 +70,19 @@ export class SimulationPosition {
   })
   totalCost: number;
 
+  /**
+   * 累计卖出所得（已扣卖出佣金的净回款合计，与 totalCost 同口径）
+   * 券商式动态成本：avgCost = (totalCost - totalSell) / quantity
+   */
+  @Column({
+    type: 'decimal',
+    precision: 12,
+    scale: 2,
+    default: 0,
+    name: 'total_sell',
+  })
+  totalSell: number;
+
   @Column({
     type: 'decimal',
     precision: 10,
