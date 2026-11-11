@@ -1,10 +1,13 @@
 // K线形态数据类型定义
 
+export type MarketPosition = 'top' | 'bottom' | 'up' | 'down' | 'flat' | 'unknown';
+
 export interface KLinePattern {
   id: string;
   indexId: string;
   tradeDate: string;
   trendState: 'uptrend' | 'downtrend' | 'sideways';
+  marketPosition?: MarketPosition;
   patternType: string;
   patternName: string;
   confidence: number;
@@ -31,6 +34,7 @@ export interface QueryPatternParams {
   trendState?: 'uptrend' | 'downtrend' | 'sideways';
   patternName?: string;
   signal?: 'buy' | 'sell' | 'neutral';
+  marketPosition?: MarketPosition | string;
   page?: number;
   pageSize?: number;
 }

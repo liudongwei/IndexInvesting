@@ -10,6 +10,7 @@ import { SingleCandlePatterns } from './patterns/single-candle.pattern';
 import { TwoCandlePatterns } from './patterns/two-candle.pattern';
 import { ThreeCandlePatterns } from './patterns/three-candle.pattern';
 import { HaramiPatterns } from './patterns/harami.pattern';
+import { MarketPositionClassifier, PositionAnalysis } from './patterns/market-position.classifier';
 
 /**
  * K线形态分析主服务
@@ -32,6 +33,7 @@ export class KLinePatternService {
     private twoCandlePatterns: TwoCandlePatterns,
     private threeCandlePatterns: ThreeCandlePatterns,
     private haramiPatterns: HaramiPatterns,
+    private marketPositionClassifier: MarketPositionClassifier,
   ) {}
 
   /**
@@ -47,22 +49,28 @@ export class KLinePatternService {
     isRealtime: boolean = false
   ): Promise<KLineAnalysisResult | null> {
     try {
-      // 获取历史K线数据（至少需要30根用于趋势判断）
-      const candles = await this.getHistoricalCandles(indexId, tradeDate, 100);
-      
+      // 获取历史K线数据：400根用于阶段位置（regime 最长 MA200 + 120根通道），
+      // 最近100根用于趋势判断与形态识别（保持原有行为不变）
+      const candles = await this.getHistoricalCandles(indexId, tradeDate, 400);
+
       if (!candles || candles.length < 3) {
         this.logger.warn(`指数 ${indexId} 在 ${tradeDate} 的数据不足`);
         return null;
       }
 
-      // 1. 趋势分析
-      const trendAnalysis = this.trendDetector.analyzeTrend(candles);
-      
+      const trendCandles = candles.slice(0, 100);
+
+      // 1. 趋势分析（基于最近100根，行为与旧版一致）
+      const trendAnalysis = this.trendDetector.analyzeTrend(trendCandles);
+
+      // 1.5 市场阶段位置分析（基于最近400根，识别顶部/底部/上涨/下跌/横盘）
+      const position = this.marketPositionClassifier.classify(candles);
+
       // 2. 形态识别
       const patterns: PatternResult[] = [];
-      
+
       // 单根 K 线形态
-      let singlePatterns = this.singleCandlePatterns.detect(candles);
+      let singlePatterns = this.singleCandlePatterns.detect(trendCandles);
       // 根据趋势状态解析形态名称
       singlePatterns = singlePatterns.map(pattern => 
         this.resolvePatternByTrend(pattern, trendAnalysis.trendState)
@@ -70,27 +78,33 @@ export class KLinePatternService {
       patterns.push(...singlePatterns);
       
       // 双根 K 线形态
-      const doublePatterns = this.twoCandlePatterns.detect(candles);
+      const doublePatterns = this.twoCandlePatterns.detect(trendCandles);
       patterns.push(...doublePatterns);
       
       // 三根 K 线形态
-      const triplePatterns = this.threeCandlePatterns.detect(candles);
+      const triplePatterns = this.threeCandlePatterns.detect(trendCandles);
       patterns.push(...triplePatterns);
       
       // 孕线形态
-      const haramiPatterns = this.haramiPatterns.detect(candles);
+      const haramiPatterns = this.haramiPatterns.detect(trendCandles);
       patterns.push(...haramiPatterns);
 
+      // 2.5 按所处市场阶段位置对形态置信度做降权/保留（不删除、不翻转信号）
+      const reweighted = patterns.map(p => this.applyPositionWeighting(p, position));
+
       // 按置信度排序，取最高置信度的形态作为主要形态
-      patterns.sort((a, b) => b.confidence - a.confidence);
-      const primaryPattern = patterns.length > 0 ? patterns[0] : undefined;
+      reweighted.sort((a, b) => b.confidence - a.confidence);
+      const primaryPattern = reweighted.length > 0 ? reweighted[0] : undefined;
 
       const result: KLineAnalysisResult = {
         tradeDate,
         trendState: trendAnalysis.trendState, // 保持原始趋势状态，可能在savePatternResult中被转换
         trendScore: trendAnalysis.score,
         trendConfidence: trendAnalysis.confidence,
-        patterns,
+        marketPosition: position.position,
+        positionDescription: position.description,
+        channelPosition: position.channelPosition,
+        patterns: reweighted,
         primaryPattern
       };
 
@@ -230,6 +244,8 @@ export class KLinePatternService {
             tradeDate,
             success: true,
             trendState: analysisResult.trendState,
+            marketPosition: analysisResult.marketPosition,
+            positionDescription: analysisResult.positionDescription,
             primaryPattern: analysisResult.primaryPattern ? {
               patternType: analysisResult.primaryPattern.patternType,
               patternName: analysisResult.primaryPattern.patternName,
@@ -317,6 +333,7 @@ export class KLinePatternService {
     trendState?: string,
     patternName?: string,
     signal?: string,
+    marketPosition?: string,
     page: number = 1,
     pageSize: number = 20
   ): Promise<{ data: KLinePattern[]; total: number; count: number }> {
@@ -349,6 +366,10 @@ export class KLinePatternService {
 
     if (signal) {
       queryBuilder.andWhere('pattern.signal = :signal', { signal });
+    }
+
+    if (marketPosition) {
+      queryBuilder.andWhere('pattern.marketPosition = :marketPosition', { marketPosition });
     }
 
     // 获取总数
@@ -461,6 +482,7 @@ export class KLinePatternService {
       indexId,
       tradeDate,
       trendState: validTrendState,
+      marketPosition: result.marketPosition ?? 'unknown',
       patternType: result.primaryPattern.patternType,
       patternName: result.primaryPattern.patternName,
       confidence: result.primaryPattern.confidence,
@@ -473,7 +495,10 @@ export class KLinePatternService {
       })),
       metadata: {
         allPatterns: result.patterns,
-        trendDescription: result.trendState
+        trendDescription: result.trendState,
+        marketPosition: result.marketPosition ?? 'unknown',
+        positionDescription: result.positionDescription,
+        channelPosition: result.channelPosition ?? null
       },
       isRealtime
     };
@@ -516,6 +541,45 @@ export class KLinePatternService {
       close: Number(h.closePrice),
       volume: h.volume ? Number(h.volume) : null
     }));
+  }
+
+  /**
+   * 按市场阶段位置对形态置信度做降权/保留（不删除、不翻转信号）
+   * @param pattern 形态结果
+   * @param position 阶段位置分析结果
+   * @returns 降权后的形态结果（位置因子为1时原样返回）
+   */
+  private applyPositionWeighting(
+    pattern: PatternResult,
+    position: PositionAnalysis
+  ): PatternResult {
+    const factor = this.marketPositionClassifier.confidenceFactor(pattern.signal, position.position);
+    if (factor >= 1 || pattern.signal === 'neutral') {
+      // 保留原置信度，但在 metadata 中记录所处位置
+      return {
+        ...pattern,
+        metadata: {
+          ...pattern.metadata,
+          marketPosition: position.position,
+          positionDescription: position.description,
+        },
+      };
+    }
+
+    const newConfidence = Math.round(pattern.confidence * factor * 10000) / 10000;
+    return {
+      ...pattern,
+      confidence: newConfidence,
+      description: pattern.description
+        ? `${pattern.description}；所处${position.description}`
+        : `所处${position.description}`,
+      metadata: {
+        ...pattern.metadata,
+        marketPosition: position.position,
+        positionDescription: position.description,
+        positionFactor: factor,
+      },
+    };
   }
 
   /**

@@ -669,6 +669,7 @@ export async function queryKLinePatterns(params?: QueryPatternParams): Promise<K
     if (params.trendState) url += `trendState=${params.trendState}&`;
     if (params.patternName) url += `patternName=${encodeURIComponent(params.patternName)}&`;
     if (params.signal) url += `signal=${params.signal}&`;
+    if (params.marketPosition) url += `marketPosition=${params.marketPosition}&`;
     if (params.page !== undefined) url += `page=${params.page}&`;
     if (params.pageSize !== undefined) url += `pageSize=${params.pageSize}&`;
   }

@@ -56,6 +56,12 @@ export interface KLineAnalysisResult {
   trendScore?: number;
   /** 趋势置信度 0~1 */
   trendConfidence?: number;
+  /** 市场阶段位置（当天蜡烛在阶段性K线中的位置） */
+  marketPosition?: 'top' | 'bottom' | 'up' | 'down' | 'flat' | 'unknown';
+  /** 阶段位置描述（中文，写入 metadata / 页面展示） */
+  positionDescription?: string;
+  /** 当前收盘价在近期通道中的分位 0~1 */
+  channelPosition?: number | null;
   patterns: PatternResult[]; // 可能同时检测到多个形态
   primaryPattern?: PatternResult; // 主要形态（置信度最高的）
 }

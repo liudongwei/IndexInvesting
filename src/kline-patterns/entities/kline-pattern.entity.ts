@@ -46,6 +46,14 @@ export class KLinePattern {
   })
   trendState: TrendState;
 
+  @Column({
+    type: 'varchar',
+    length: 20,
+    default: 'unknown',
+    comment: '市场阶段位置: top=顶部区, bottom=底部区, up=上涨中段, down=下跌中段, flat=横盘中段, unknown=数据不足'
+  })
+  marketPosition: string;
+
   @Column({ length: 50, comment: 'K线形态类型，如 hammer, bullish_engulfing' })
   patternType: string;
 

@@ -15,6 +15,7 @@ export function KLinePatternManagement() {
   const [endDate, setEndDate] = useState<string>('');
   const [isRealtime, setIsRealtime] = useState<boolean | undefined>(undefined);
   const [trendState, setTrendState] = useState<string>('');
+  const [marketPosition, setMarketPosition] = useState<string>('');
   const [patternName, setPatternName] = useState<string>('');
   const [signal, setSignal] = useState<string>('');
   
@@ -48,6 +49,7 @@ export function KLinePatternManagement() {
       if (endDate) params.endDate = endDate;
       if (isRealtime !== undefined) params.isRealtime = isRealtime;
       if (trendState) params.trendState = trendState;
+      if (marketPosition) params.marketPosition = marketPosition;
       if (patternName) params.patternName = patternName;
       if (signal) params.signal = signal;
       
@@ -67,7 +69,7 @@ export function KLinePatternManagement() {
 
   useEffect(() => {
     loadPatterns();
-  }, [page, selectedindexId, startDate, endDate, isRealtime, trendState, patternName, signal]);
+  }, [page, selectedindexId, startDate, endDate, isRealtime, trendState, marketPosition, patternName, signal]);
 
   // 格式化日期
   const formatDate = (dateStr: string) => {
@@ -88,6 +90,31 @@ export function KLinePatternManagement() {
       case 'downtrend': return '下降趋势';
       case 'sideways': return '横盘趋势';
       default: return state;
+    }
+  };
+
+  // 获取市场阶段位置文本
+  const getMarketPositionText = (pos?: string) => {
+    switch (pos) {
+      case 'top': return '顶部区';
+      case 'bottom': return '底部区';
+      case 'up': return '上涨中段';
+      case 'down': return '下跌中段';
+      case 'flat': return '横盘中段';
+      case 'unknown': return '未知';
+      default: return pos || '未知';
+    }
+  };
+
+  // 获取市场阶段位置样式
+  const getMarketPositionClass = (pos?: string) => {
+    switch (pos) {
+      case 'top': return 'bg-orange-100 text-orange-800';
+      case 'bottom': return 'bg-emerald-100 text-emerald-800';
+      case 'up': return 'bg-green-100 text-green-800';
+      case 'down': return 'bg-red-100 text-red-800';
+      case 'flat': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-500';
     }
   };
 
@@ -117,6 +144,7 @@ export function KLinePatternManagement() {
     setEndDate('');
     setIsRealtime(undefined);
     setTrendState('');
+    setMarketPosition('');
     setPatternName('');
     setSignal('');
     setPage(1);
@@ -205,7 +233,7 @@ export function KLinePatternManagement() {
             </div>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">趋势状态</label>
               <select
@@ -217,6 +245,23 @@ export function KLinePatternManagement() {
                 <option value="uptrend">上升趋势</option>
                 <option value="downtrend">下降趋势</option>
                 <option value="sideways">横盘趋势</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">阶段位置</label>
+              <select
+                value={marketPosition}
+                onChange={(e) => setMarketPosition(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">全部</option>
+                <option value="top">顶部区</option>
+                <option value="bottom">底部区</option>
+                <option value="up">上涨中段</option>
+                <option value="down">下跌中段</option>
+                <option value="flat">横盘中段</option>
+                <option value="unknown">未知</option>
               </select>
             </div>
             
@@ -291,6 +336,9 @@ export function KLinePatternManagement() {
                     趋势状态
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    阶段位置
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     形态名称
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -307,7 +355,7 @@ export function KLinePatternManagement() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
                       <div className="flex items-center justify-center gap-2">
                         <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                         加载中...
@@ -316,7 +364,7 @@ export function KLinePatternManagement() {
                   </tr>
                 ) : patterns.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
                       暂无数据
                     </td>
                   </tr>
@@ -344,6 +392,14 @@ export function KLinePatternManagement() {
                           }`}
                         >
                           {getTrendStateText(pattern.trendState)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span
+                          title={pattern.metadata?.positionDescription}
+                          className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getMarketPositionClass(pattern.marketPosition)}`}
+                        >
+                          {getMarketPositionText(pattern.marketPosition)}
                         </span>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">

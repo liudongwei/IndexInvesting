@@ -67,6 +67,10 @@ export class QueryPatternDto {
   signal?: string;
 
   @IsOptional()
+  @IsIn(['top', 'bottom', 'up', 'down', 'flat', 'unknown'], { message: '市场阶段位置必须是 top、bottom、up、down、flat 或 unknown' })
+  marketPosition?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

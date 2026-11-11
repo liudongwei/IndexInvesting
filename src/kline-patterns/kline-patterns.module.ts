@@ -11,6 +11,7 @@ import { SingleCandlePatterns } from './patterns/single-candle.pattern';
 import { TwoCandlePatterns } from './patterns/two-candle.pattern';
 import { ThreeCandlePatterns } from './patterns/three-candle.pattern';
 import { HaramiPatterns } from './patterns/harami.pattern';
+import { MarketPositionClassifier } from './patterns/market-position.classifier';
 
 @Module({
   imports: [
@@ -24,7 +25,8 @@ import { HaramiPatterns } from './patterns/harami.pattern';
     SingleCandlePatterns,
     TwoCandlePatterns,
     ThreeCandlePatterns,
-    HaramiPatterns
+    HaramiPatterns,
+    MarketPositionClassifier
   ],
   exports: [KLinePatternService, KLinePatternCronService]
 })

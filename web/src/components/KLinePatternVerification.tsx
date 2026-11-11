@@ -10,6 +10,8 @@ interface CalculateResult {
   tradeDate: string;
   success: boolean;
   trendState?: 'uptrend' | 'downtrend' | 'sideways';
+  marketPosition?: 'top' | 'bottom' | 'up' | 'down' | 'flat' | 'unknown';
+  positionDescription?: string;
   primaryPattern?: {
     patternType: string;
     patternName: string;
@@ -122,6 +124,24 @@ export function KLinePatternVerification() {
         return { text: '横盘趋势', className: 'bg-gray-100 text-gray-800' };
       default:
         return { text: state, className: 'bg-gray-100 text-gray-800' };
+    }
+  };
+
+  // 获取市场阶段位置文本和样式
+  const getMarketPositionConfig = (pos?: string) => {
+    switch (pos) {
+      case 'top':
+        return { text: '顶部区', className: 'bg-orange-100 text-orange-800' };
+      case 'bottom':
+        return { text: '底部区', className: 'bg-emerald-100 text-emerald-800' };
+      case 'up':
+        return { text: '上涨中段', className: 'bg-green-100 text-green-800' };
+      case 'down':
+        return { text: '下跌中段', className: 'bg-red-100 text-red-800' };
+      case 'flat':
+        return { text: '横盘中段', className: 'bg-gray-100 text-gray-800' };
+      default:
+        return { text: '未知', className: 'bg-gray-100 text-gray-500' };
     }
   };
 
@@ -283,7 +303,7 @@ export function KLinePatternVerification() {
                       {result.primaryPattern && (
                         <div className="bg-blue-50 rounded-lg p-4">
                           <h4 className="text-sm font-medium text-blue-900 mb-3">主要形态</h4>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                             <div>
                               <p className="text-xs text-blue-700">趋势状态</p>
                               <span
@@ -292,6 +312,17 @@ export function KLinePatternVerification() {
                                 }`}
                               >
                                 {getTrendStateConfig(result.trendState || '').text}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-xs text-blue-700">阶段位置</p>
+                              <span
+                                title={result.positionDescription}
+                                className={`inline-block mt-1 px-2 py-1 text-xs font-medium rounded-full ${
+                                  getMarketPositionConfig(result.marketPosition).className
+                                }`}
+                              >
+                                {getMarketPositionConfig(result.marketPosition).text}
                               </span>
                             </div>
                             <div>

@@ -114,6 +114,7 @@ export class KLinePatternController {
    * @param query.trendState 可选，趋势状态 (uptrend/downtrend/sideways)
    * @param query.patternName 可选，形态名称（支持模糊搜索）
    * @param query.signal 可选，信号类型 (buy/sell/neutral)
+   * @param query.marketPosition 可选，市场阶段位置 (top/bottom/up/down/flat/unknown)
    * @param query.page 可选，页码（默认1）
    * @param query.pageSize 可选，每页条数（默认20）
    */
@@ -127,6 +128,7 @@ export class KLinePatternController {
       query.trendState,
       query.patternName,
       query.signal,
+      query.marketPosition,
       query.page || 1,
       query.pageSize || 20
     );
