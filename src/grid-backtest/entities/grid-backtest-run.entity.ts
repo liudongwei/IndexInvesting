@@ -45,6 +45,12 @@ export class GridBacktestRun {
   @Column({ type: 'jsonb', nullable: true, comment: '数据源警告（如东财降级为缓存）' })
   warnings: string[] | null;
 
+  @Column({ type: 'varchar', length: 30, nullable: true, comment: 'K线数据源(eastmoney/cache/cache-stale/tencent/index-histories)' })
+  dataSource: string | null;
+
+  @Column({ type: 'int', nullable: true, comment: '回测计算耗时(ms)' })
+  elapsedMs: number | null;
+
   @CreateDateColumn() createdAt: Date;
   @UpdateDateColumn() updatedAt: Date;
 }

@@ -9,7 +9,7 @@ import { TradingInstrument, TradingRule } from '../simulation-portfolio/entities
 import { Index } from '../indices/entities/index.entity';
 import { IndexHistory } from '../indices/entities/index-history.entity';
 import { KLinePattern } from '../kline-patterns/entities/kline-pattern.entity';
-import { EngineBar, EngineParams, runGridEngine } from './grid-engine';
+import { EngineBar, EngineParams, runGridEngine, buildLevels } from './grid-engine';
 import {
   RunGridBacktestDto,
   SuggestParamsDto,
@@ -472,6 +472,8 @@ export class GridBacktestService {
         trades: result.trades,
         adaptivity: adaptivity as any,
         warnings: warnings.length ? warnings : null,
+        dataSource: source,
+        elapsedMs,
       }),
     );
 
@@ -650,7 +652,28 @@ export class GridBacktestService {
     } catch (e: any) {
       barsWarning = `K线数据加载失败：${e?.message || e}`;
     }
-    return { success: true, data: { ...row, bars, barsWarning } };
+    // 网格线不落库：按存储参数用引擎纯函数确定性重建（K线图依赖，缺失会导致前端崩溃）
+    let levels: number[] = [];
+    try {
+      const p = row.params;
+      levels = buildLevels({
+        basePrice: Number(p.basePrice),
+        upperPct: Number(p.upperPct),
+        lowerPct: Number(p.lowerPct),
+        gridMode: p.gridMode,
+        gridCount: Number(p.gridCount),
+        quantityPerGrid: Number(p.quantityPerGrid),
+        initialCapital: Number(p.initialCapital),
+        commissionRate: Number(p.commissionRate),
+        minCommission: Number(p.minCommission),
+        slippageBps: Number(p.slippageBps),
+        lotSize: Number(p.lotSize),
+        applyTPlus1: !!p.applyTPlus1,
+      }).map(r4);
+    } catch {
+      levels = [];
+    }
+    return { success: true, data: { ...row, levels, bars, barsWarning } };
   }
 
   async remove(id: string) {

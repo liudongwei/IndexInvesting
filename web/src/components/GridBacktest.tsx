@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Component } from 'react';
+import type { ReactNode } from 'react';
 import {
   createChart,
   CandlestickSeries,
@@ -69,9 +70,36 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 const inputCls =
   'w-full px-2.5 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white';
 
+/** 局部错误边界：任何渲染/图表 effect 崩溃都降级为提示条，绝不白屏 */
+interface BoundaryState {
+  error: Error | null;
+}
+class GridErrorBoundary extends Component<{ children: ReactNode }, BoundaryState> {
+  state: BoundaryState = { error: null };
+  static getDerivedStateFromError(error: Error): BoundaryState {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-4 m-4 bg-red-50 border border-red-200 rounded-lg max-w-2xl">
+          <div className="text-red-700 text-sm font-medium">页面渲染出错：{this.state.error.message}</div>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="mt-2 px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700"
+          >
+            重试
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ---------------------------------------------------------------- 主组件
 
-export function GridBacktest() {
+function GridBacktestInner() {
   const [targetType, setTargetType] = useState<'instrument' | 'index'>('instrument');
   const [instruments, setInstruments] = useState<Opt[]>([]);
   const [indices, setIndices] = useState<Opt[]>([]);
@@ -172,8 +200,8 @@ export function GridBacktest() {
       result.bars.map((b) => ({ time: b.date, open: b.open, high: b.high, low: b.low, close: b.close })),
     );
 
-    // 网格线（最多画 ~100 条，上下界高亮）
-    const levels = result.levels;
+    // 网格线（最多画 ~100 条，上下界高亮）；旧记录详情可能缺 levels，必须兜底
+    const levels = result.levels ?? [];
     const lastIdx = levels.length - 1;
     const step = Math.max(1, Math.ceil(levels.length / 100));
     levels.forEach((p, i) => {
@@ -211,7 +239,7 @@ export function GridBacktest() {
   // ---------------------------------------------------------- 图表：权益曲线
 
   useEffect(() => {
-    if (tab !== 'equity' || !result || !equityRef.current) return;
+    if (tab !== 'equity' || (!result && !compare) || !equityRef.current) return;
     const el = equityRef.current;
     el.innerHTML = '';
     const chart = createChart(el, {
@@ -222,15 +250,17 @@ export function GridBacktest() {
       rightPriceScale: { borderColor: '#e2e8f0' },
       timeScale: { borderColor: '#e2e8f0' },
     });
-    const eq = chart.addSeries(LineSeries, { color: '#2563eb', lineWidth: 2, title: '网格策略' });
-    eq.setData(result.curve.map((p) => ({ time: p.date, value: p.equity })));
-    const bm = chart.addSeries(LineSeries, {
-      color: '#f59e0b',
-      lineWidth: 2,
-      lineStyle: LineStyle.Dashed,
-      title: '买入持有',
-    });
-    bm.setData(result.curve.map((p) => ({ time: p.date, value: p.benchmark })));
+    if (result) {
+      const eq = chart.addSeries(LineSeries, { color: '#2563eb', lineWidth: 2, title: '网格策略' });
+      eq.setData(result.curve.map((p) => ({ time: p.date, value: p.equity })));
+      const bm = chart.addSeries(LineSeries, {
+        color: '#f59e0b',
+        lineWidth: 2,
+        lineStyle: LineStyle.Dashed,
+        title: '买入持有',
+      });
+      bm.setData(result.curve.map((p) => ({ time: p.date, value: p.benchmark })));
+    }
     if (compare) {
       const cmp = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, title: compare.label });
       cmp.setData(compare.curve.map((p) => ({ time: p.date, value: p.equity })));
@@ -434,8 +464,9 @@ export function GridBacktest() {
         label: `${d.targetLabel} 对比`,
         curve: d.curve.map((p) => ({ date: p.date, equity: p.equity })),
       });
-      setNotice(`已载入对比曲线：${d.targetLabel}（${d.metrics.firstDate} ~ ${d.metrics.lastDate}），在“权益曲线”页签查看`);
+      setNotice(`已载入对比曲线：${d.targetLabel}（${d.metrics.firstDate} ~ ${d.metrics.lastDate}），已在“权益曲线”页签叠加显示`);
       setTab('equity');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e: any) {
       setErr(e?.message || '加载对比记录失败');
     }
@@ -737,7 +768,7 @@ export function GridBacktest() {
                   区间 {m?.firstDate} ~ {m?.lastDate}（{m?.barCount} 根日K） · 网格 {result.params.gridCount} 格{' '}
                   {result.params.gridMode === 'geometric' ? '等比' : '等差'} · 区间 {result.params.lowerPrice ?? ''}{' '}
                   {m ? `${m.lowerPrice} ~ ${m.upperPrice}` : ''} · 期末持仓 {fmtInt(m?.finalQty)} 份（仓位{' '}
-                  {fmtPct(posRatio, 1)}） · 数据源 {result.dataSource} · 计算耗时 {result.elapsedMs}ms
+                  {fmtPct(posRatio, 1)}） · 数据源 {result.dataSource || '—'}{result.elapsedMs != null && ` · 计算耗时 ${result.elapsedMs}ms`}
                 </div>
               </div>
             </>
@@ -785,7 +816,7 @@ export function GridBacktest() {
           {/* 权益曲线页签 */}
           {tab === 'equity' && (
             <div className="bg-white rounded-xl border border-gray-200 p-3">
-              {result ? (
+              {result || compare ? (
                 <>
                   <div ref={equityRef} className="w-full" />
                   <div className="flex items-center gap-4 text-xs text-gray-400 mt-2 px-1">
@@ -1101,5 +1132,13 @@ export function GridBacktest() {
         )}
       </div>
     </div>
+  );
+}
+
+export function GridBacktest() {
+  return (
+    <GridErrorBoundary>
+      <GridBacktestInner />
+    </GridErrorBoundary>
   );
 }
