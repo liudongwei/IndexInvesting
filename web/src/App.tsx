@@ -21,6 +21,7 @@ import { SimulationPositions } from './components/SimulationPositions';
 import { SimulationTrades } from './components/SimulationTrades';
 import { TradingInstrumentManagement } from './components/TradingInstrumentManagement';
 import { SimulationAccountManagement } from './components/SimulationAccountManagement';
+import { GridBacktest } from './components/GridBacktest';
 import { getLatestRanking, getRankingByDate } from './services/api';
 import type { TrendRankingItem } from './types/trend';
 import { INDEX_TYPE, type IndexType } from './types/index-type';
@@ -332,6 +333,7 @@ function AdminLayout() {
     { path: '/admin/kline-pattern-verification', label: '形态验证', icon: '🔍' },
     { path: '/admin/trading-instruments', label: '交易标的', icon: '💼' },
     { path: '/admin/simulation-accounts', label: '交易账户', icon: '👛' },
+    { path: '/admin/grid-backtest', label: '网格回测', icon: '📐' },
     { path: '/admin/index-config', label: '指数配置', icon: '⚙️' },
     { path: '/admin/cron-configs', label: '定时任务', icon: '⏰' },
     { path: '/admin/batch-operations', label: '批量操作', icon: '🔧' },
@@ -393,6 +395,7 @@ function AdminLayout() {
             <Route path="kline-pattern-verification" element={<KLinePatternVerification />} />
             <Route path="trading-instruments" element={<TradingInstrumentManagement />} />
             <Route path="simulation-accounts" element={<SimulationAccountManagement />} />
+            <Route path="grid-backtest" element={<GridBacktest />} />
             <Route path="index-config" element={<IndexConfigManagement />} />
             <Route path="cron-configs" element={<CronConfig />} />
             <Route path="batch-operations" element={<BatchOperations />} />

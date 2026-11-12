@@ -14,6 +14,7 @@ import { CronConfigModule } from './cron-config/cron-config.module';
 import { DynamicTrendModule } from './dynamic-trend/dynamic-trend.module';
 import { KLinePatternsModule } from './kline-patterns/kline-patterns.module';
 import { SimulationPortfolioModule } from './simulation-portfolio/simulation-portfolio.module';
+import { GridBacktestModule } from './grid-backtest/grid-backtest.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { SimulationPortfolioModule } from './simulation-portfolio/simulation-por
     DynamicTrendModule,
     KLinePatternsModule,
     SimulationPortfolioModule,
+    GridBacktestModule,
   ],
   controllers: [AppController],
   providers: [AppService],
