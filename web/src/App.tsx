@@ -324,20 +324,65 @@ function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const menuItems = [
-    { path: '/admin/indices', label: '指数管理', icon: '📊' },
-    { path: '/admin/history', label: '历史数据', icon: '📜' },
-    { path: '/admin/moving-averages', label: '均线管理', icon: '📈' },
-    { path: '/admin/trend-analysis', label: '趋势分析', icon: '📉' },
-    { path: '/admin/kline-patterns', label: 'K线形态', icon: '🕯️' },
-    { path: '/admin/kline-pattern-verification', label: '形态验证', icon: '🔍' },
-    { path: '/admin/trading-instruments', label: '交易标的', icon: '💼' },
-    { path: '/admin/simulation-accounts', label: '交易账户', icon: '👛' },
-    { path: '/admin/grid-backtest', label: '网格回测', icon: '📐' },
-    { path: '/admin/index-config', label: '指数配置', icon: '⚙️' },
-    { path: '/admin/cron-configs', label: '定时任务', icon: '⏰' },
-    { path: '/admin/batch-operations', label: '批量操作', icon: '🔧' },
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('adminMenuCollapsed') || '{}');
+    } catch {
+      return {};
+    }
+  });
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem('adminMenuCollapsed', JSON.stringify(next));
+      } catch {
+        /* localStorage 不可用时忽略 */
+      }
+      return next;
+    });
+  };
+
+  // 两级菜单：分组 → 条目（结构常量；后续“菜单管理”需求可直接把此结构数据化）
+  const menuGroups = [
+    {
+      key: 'data',
+      label: '行情数据',
+      items: [
+        { path: '/admin/indices', label: '指数管理', icon: '📊' },
+        { path: '/admin/history', label: '历史数据', icon: '📜' },
+        { path: '/admin/index-config', label: '指数配置', icon: '⚙️' },
+      ],
+    },
+    {
+      key: 'analysis',
+      label: '策略分析',
+      items: [
+        { path: '/admin/moving-averages', label: '均线管理', icon: '📈' },
+        { path: '/admin/trend-analysis', label: '趋势分析', icon: '📉' },
+        { path: '/admin/kline-patterns', label: 'K线形态', icon: '🕯️' },
+        { path: '/admin/kline-pattern-verification', label: '形态验证', icon: '🔍' },
+      ],
+    },
+    {
+      key: 'trading',
+      label: '交易工具',
+      items: [
+        { path: '/admin/trading-instruments', label: '交易标的', icon: '💼' },
+        { path: '/admin/simulation-accounts', label: '交易账户', icon: '👛' },
+        { path: '/admin/grid-backtest', label: '网格回测', icon: '📐' },
+      ],
+    },
+    {
+      key: 'system',
+      label: '系统管理',
+      items: [
+        { path: '/admin/cron-configs', label: '定时任务', icon: '⏰' },
+        { path: '/admin/batch-operations', label: '批量操作', icon: '🔧' },
+      ],
+    },
   ];
+  const menuItems = menuGroups.flatMap((g) => g.items);
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -347,21 +392,44 @@ function AdminLayout() {
           <h2 className="text-base font-semibold text-gray-900">管理后台</h2>
           <p className="text-xs text-gray-500 mt-1">系统配置与数据管理</p>
         </div>
-        <nav className="p-2 flex-1">
-          {menuItems.map((item) => (
-            <button
-              key={item.path}
-              onClick={() => navigate(item.path)}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-1 ${
-                location.pathname === item.path
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <span className="mr-2">{item.icon}</span>
-              {item.label}
-            </button>
-          ))}
+        <nav className="p-2 flex-1 overflow-y-auto">
+          {menuGroups.map((group) => {
+            const isCollapsed = !!collapsedGroups[group.key];
+            const hasActive = group.items.some((i) => location.pathname === i.path);
+            return (
+              <div key={group.key} className="mb-1.5">
+                <button
+                  onClick={() => toggleGroup(group.key)}
+                  className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    hasActive ? 'text-blue-700 bg-blue-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                  }`}
+                  title={isCollapsed ? `展开${group.label}` : `收起${group.label}`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span>📁</span>
+                    {group.label}
+                    <span className="font-normal text-gray-300">{group.items.length}</span>
+                  </span>
+                  <span className="text-[10px]">{isCollapsed ? '▸' : '▾'}</span>
+                </button>
+                {!isCollapsed &&
+                  group.items.map((item) => (
+                    <button
+                      key={item.path}
+                      onClick={() => navigate(item.path)}
+                      className={`w-full text-left pl-5 pr-3 py-1.5 rounded-lg text-sm font-medium transition-colors mb-0.5 ${
+                        location.pathname === item.path
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      <span className="mr-2">{item.icon}</span>
+                      {item.label}
+                    </button>
+                  ))}
+              </div>
+            );
+          })}
         </nav>
       </aside>
 
