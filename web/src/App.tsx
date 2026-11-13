@@ -22,6 +22,7 @@ import { SimulationTrades } from './components/SimulationTrades';
 import { TradingInstrumentManagement } from './components/TradingInstrumentManagement';
 import { SimulationAccountManagement } from './components/SimulationAccountManagement';
 import { GridBacktest } from './components/GridBacktest';
+import { AdminLogin } from './components/AdminLogin';
 import { getLatestRanking, getRankingByDate } from './services/api';
 import type { TrendRankingItem } from './types/trend';
 import { INDEX_TYPE, type IndexType } from './types/index-type';
@@ -384,6 +385,16 @@ function AdminLayout() {
   ];
   const menuItems = menuGroups.flatMap((g) => g.items);
 
+  // 未登录 → 跳转登录页（服务端 JwtAuthGuard 是真正的安全兜底，此处仅为 UX 门禁）
+  if (!localStorage.getItem('admin_token')) {
+    return (
+      <Navigate
+        to={`/admin/login?from=${encodeURIComponent(location.pathname + location.search)}`}
+        replace
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* 侧边栏 */}
@@ -440,16 +451,39 @@ function AdminLayout() {
           <div className="text-sm text-gray-500">
             {menuItems.find(item => item.path === location.pathname)?.label || '管理后台'}
           </div>
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700 transition-colors"
-            title="返回前端展示页面"
-          >
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400">
+              {(() => {
+                try {
+                  const u = JSON.parse(localStorage.getItem('admin_user') || 'null');
+                  return u?.username ? `👤 ${u.username}` : '';
+                } catch {
+                  return '';
+                }
+              })()}
+            </span>
+            <button
+              onClick={() => {
+                localStorage.removeItem('admin_token');
+                localStorage.removeItem('admin_user');
+                navigate('/admin/login');
+              }}
+              className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+              title="退出登录"
+            >
+              退出
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700 transition-colors"
+              title="返回前端展示页面"
+            >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
             </svg>
-            前端
-          </button>
+              前端
+            </button>
+          </div>
         </header>
 
         {/* 页面内容 */}
@@ -496,6 +530,7 @@ function AppContent() {
         <Route path="/simulation/positions" element={<SimulationPositions />} />
         <Route path="/simulation/trades" element={<SimulationTrades />} />
         <Route path="/index/:indexId" element={<IndexDetail />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin/*" element={<AdminLayout />} />
       </Routes>
     </div>

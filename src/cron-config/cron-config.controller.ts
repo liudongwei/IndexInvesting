@@ -7,12 +7,15 @@ import {
   Body,
   Param,
   Patch,
+  UseGuards,
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CronConfigService } from './cron-config.service';
 import { CreateCronConfigDto } from './dto/create-cron-config.dto';
 import { UpdateCronConfigDto } from './dto/update-cron-config.dto';
 import { CronConfig } from './entities/cron-config.entity';
 
+@UseGuards(JwtAuthGuard)
 @Controller('admin/cron-configs')
 export class CronConfigController {
   constructor(private readonly cronConfigService: CronConfigService) {}

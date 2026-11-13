@@ -63,7 +63,7 @@ export function SimulationBuy() {
   const loadInstruments = async () => {
     try {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
-      const response = await fetch(`${baseUrl}/admin/trading-instruments?page=1&limit=100`);
+      const response = await fetch(`${baseUrl}/simulation/portfolio/instruments`);
       const data = await response.json();
       setInstruments(data.data || []);
       // 不自动选择标的，让用户手动选择

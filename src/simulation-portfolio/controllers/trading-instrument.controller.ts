@@ -8,7 +8,9 @@ import {
   Param,
   Query,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { TradingInstrumentService } from '../services/trading-instrument.service';
 import { CreateInstrumentDto } from '../dto/create-instrument.dto';
 import { UpdateInstrumentDto } from '../dto/update-instrument.dto';
@@ -16,6 +18,7 @@ import { UpdateInstrumentDto } from '../dto/update-instrument.dto';
 /**
  * 交易标的管理 Controller（Admin）
  */
+@UseGuards(JwtAuthGuard)
 @Controller('admin/trading-instruments')
 export class TradingInstrumentController {
   constructor(private instrumentService: TradingInstrumentService) {}

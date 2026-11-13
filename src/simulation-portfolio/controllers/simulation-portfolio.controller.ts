@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { SimulationAccountService } from '../services/simulation-account.service';
 import { SimulationTradeService } from '../services/simulation-trade.service';
+import { TradingInstrumentService } from '../services/trading-instrument.service';
 import { BuyStockDto, SellStockDto } from '../dto/trade-stock.dto';
 
 /**
@@ -18,7 +19,35 @@ export class SimulationPortfolioController {
   constructor(
     private accountService: SimulationAccountService,
     private tradeService: SimulationTradeService,
+    private instrumentService: TradingInstrumentService,
   ) {}
+
+  // ========== 公开只读 ==========
+
+  /**
+   * 公开标的目录（无需登录）：模拟交易页下拉等公开消费者使用。
+   * 字段白名单——只返回交易必需的非敏感字段。
+   */
+  @Get('instruments')
+  async getPublicInstruments() {
+    const res = await this.instrumentService.findAll(1, 500, undefined, 'active');
+    return {
+      ...res,
+      data: res.data.map((i) => ({
+        id: i.id,
+        code: i.code,
+        name: i.name,
+        fullName: i.fullName,
+        type: i.type,
+        exchange: i.exchange,
+        tencentCode: i.tencentCode,
+        lotSize: i.lotSize,
+        tradingRule: i.tradingRule,
+        currency: i.currency,
+        status: i.status,
+      })),
+    };
+  }
 
   // ========== 账户管理 ==========
 

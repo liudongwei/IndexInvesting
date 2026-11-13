@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Delete, Body, Param, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, ParseUUIDPipe, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GridBacktestService } from './grid-backtest.service';
 import { RunGridBacktestDto, SuggestParamsDto, ScanGridDto } from './dto/grid-backtest.dto';
 
 /**
  * 网格回测控制器（管理后台，与现有 admin/* 路由约定一致）
  */
+@UseGuards(JwtAuthGuard)
 @Controller('admin/grid-backtest')
 export class GridBacktestController {
   constructor(private readonly service: GridBacktestService) {}

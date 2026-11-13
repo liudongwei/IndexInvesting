@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Body, Query, Param, ParseUUIDPipe, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, ParseUUIDPipe, ValidationPipe, UseGuards } from '@nestjs/common';
+import { WriteGuard } from '../auth/guards/write.guard';
 import { KLinePatternService } from './kline-pattern.service';
 import { AnalyzePatternDto, GetPatternHistoryDto, QueryPatternDto } from './dto/analyze-pattern.dto';
 import { CalculateKLinePatternDto } from './dto/calculate-kline-pattern.dto';
@@ -6,6 +7,7 @@ import { CalculateKLinePatternDto } from './dto/calculate-kline-pattern.dto';
 /**
  * K线形态分析控制器
  */
+@UseGuards(WriteGuard)
 @Controller('kline-patterns')
 export class KLinePatternController {
   constructor(private readonly klinePatternService: KLinePatternService) {}

@@ -1,7 +1,9 @@
-import { Controller, Get, Post, Body, Query, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, UseGuards } from '@nestjs/common';
+import { WriteGuard, Public } from '../auth/guards/write.guard';
 import { DynamicTrendService } from './dynamic-trend.service';
 import { Index } from '../indices/entities/index.entity';
 
+@UseGuards(WriteGuard)
 @Controller('dynamic-trend')
 export class DynamicTrendController {
   constructor(private readonly dynamicTrendService: DynamicTrendService) {}
@@ -54,8 +56,9 @@ export class DynamicTrendController {
   }
 
   /**
-   * 手动触发动态趋势计算
+   * 手动触发动态趋势计算（公开页"立即计算"按钮使用 → @Public 豁免）
    */
+  @Public()
   @Post('calculate')
   async calculateAndRank() {
     try {

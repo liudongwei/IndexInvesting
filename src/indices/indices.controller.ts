@@ -9,7 +9,10 @@ import {
   Query,
   UsePipes,
   ValidationPipe,
+  UseGuards,
 } from '@nestjs/common';
+import { WriteGuard, Public } from '../auth/guards/write.guard';
+import { ImportKeyGuard } from '../auth/guards/import-key.guard';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { IndicesService } from './indices.service';
 import { IndexSyncService } from './index-sync.service';
@@ -27,6 +30,7 @@ import { UpdateEastmoneyCookieDto } from './dto/update-eastmoney-cookie.dto';
 import { INDEX_TYPE, type IndexType } from '../common/constants/index-type.constants';
 
 @ApiTags('大盘指数管理')
+@UseGuards(WriteGuard)
 @Controller('indices')
 export class IndicesController {
   constructor(
@@ -174,6 +178,9 @@ export class IndicesController {
     };
   }
 
+  // 数据管道导入：X-Api-Key（自动化脚本）或 JWT（已登录管理员）二选一
+  @Public()
+  @UseGuards(ImportKeyGuard)
   @Post('import-eastmoney-json')
   @UsePipes()
   @ApiOperation({

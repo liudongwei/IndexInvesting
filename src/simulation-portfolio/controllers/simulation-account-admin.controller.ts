@@ -10,7 +10,9 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   ValidationPipe,
+  UseGuards,
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { SimulationAccountService } from '../services/simulation-account.service';
 import { CreateAccountDto } from '../dto/create-account.dto';
 import { UpdateAccountDto } from '../dto/update-account.dto';
@@ -19,6 +21,7 @@ import { AccountStatus } from '../entities/simulation-account.entity';
 /**
  * 交易账户管理 Controller（Admin）
  */
+@UseGuards(JwtAuthGuard)
 @Controller('admin/simulation-accounts')
 export class SimulationAccountAdminController {
   constructor(private accountService: SimulationAccountService) {}

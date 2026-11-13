@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Param, Query, Body, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Body, Delete, UseGuards } from '@nestjs/common';
+import { WriteGuard } from '../auth/guards/write.guard';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TrendAnalysisService } from './trend-analysis.service';
 import { IndicesService } from '../indices/indices.service';
@@ -6,6 +7,7 @@ import { RecalculateTrendDto } from './dto/recalculate-trend.dto';
 import { INDEX_TYPE, type IndexType } from '../common/constants/index-type.constants';
 
 @ApiTags('趋势分析')
+@UseGuards(WriteGuard)
 @Controller('trend-analysis')
 export class TrendAnalysisController {
   constructor(

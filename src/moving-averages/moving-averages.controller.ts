@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Param, Query, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Delete, UseGuards } from '@nestjs/common';
+import { WriteGuard } from '../auth/guards/write.guard';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { MovingAveragesService } from './moving-averages.service';
 import { IndicesService } from '../indices/indices.service';
 import { INDEX_TYPE, type IndexType } from '../common/constants/index-type.constants';
 
 @ApiTags('移动平均线(MA)计算')
+@UseGuards(WriteGuard)
 @Controller('moving-averages')
 export class MovingAveragesController {
   constructor(
