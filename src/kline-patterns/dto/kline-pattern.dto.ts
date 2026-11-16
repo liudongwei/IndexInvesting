@@ -64,4 +64,8 @@ export interface KLineAnalysisResult {
   channelPosition?: number | null;
   patterns: PatternResult[]; // 可能同时检测到多个形态
   primaryPattern?: PatternResult; // 主要形态（置信度最高的）
+  /** 本次计算是否前插了今日盘中实时K线（未收盘） */
+  isIntraday?: boolean;
+  /** 面向页面的说明：实际用于计算的交易日 / 盘中 / 非交易日回退 */
+  infoMessage?: string;
 }

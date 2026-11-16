@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { KLinePattern } from './entities/kline-pattern.entity';
 import { IndexHistory } from '../indices/entities/index-history.entity';
@@ -15,6 +16,7 @@ import { MarketPositionClassifier } from './patterns/market-position.classifier'
 
 @Module({
   imports: [
+    HttpModule,
     TypeOrmModule.forFeature([KLinePattern, IndexHistory, Index])
   ],
   controllers: [KLinePatternController],

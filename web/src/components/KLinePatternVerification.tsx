@@ -285,6 +285,11 @@ export function KLinePatternVerification() {
                       <p className="text-sm text-gray-500 mt-1">
                         交易日: {formatDate(result.tradeDate)}
                       </p>
+                      {result.message && (
+                        <p className={`text-xs mt-1 ${result.message.includes('已按') || result.message.includes('实时') ? 'text-amber-600 font-medium' : 'text-gray-400'}`}>
+                          {result.message}
+                        </p>
+                      )}
                     </div>
                     <span
                       className={`px-3 py-1 text-xs font-medium rounded-full ${
