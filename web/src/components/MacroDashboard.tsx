@@ -203,7 +203,10 @@ function CompareChart({
         type: 'value',
         min,
         max,
-        axisLabel: { fontSize: 10, formatter: '{value}%' },
+        axisLabel: {
+          fontSize: 10,
+          formatter: (v: number) => (Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(1)) + '%',
+        },
         splitLine: { lineStyle: { color: '#f3f4f6' } },
       },
       tooltip: {
@@ -252,7 +255,7 @@ export function MacroDashboard() {
   const [metas, setMetas] = useState<MetricMeta[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [seriesMap, setSeriesMap] = useState<Record<string, SeriesPoint[]>>({});
-  const [rangeKey, setRangeKey] = useState('1y');
+  const [rangeKey, setRangeKey] = useState('all');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
