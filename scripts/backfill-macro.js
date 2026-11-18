@@ -208,9 +208,16 @@ async function eastmoneyAlive() {
     log('  失败:', e.message);
   }
 
-  log('-- cn_30y_yield + cn_10y_yield（中债按日，约 ' + Math.round((new Date(to) - new Date(unified)) / 86400000 / 365) + ' 年）');
+  log('-- cn_30y_yield + cn_10y_yield（中债按日，断点续跑跳过已有日期）');
   try {
-    const cb = await src.rangeChinaBond(unified, to);
+    const exist = await client.query(
+      `SELECT to_char("dataDate", 'YYYY-MM-DD') AS d FROM macro_series
+       WHERE metric = 'cn_30y_yield' AND "dataDate" >= $1 AND "dataDate" <= $2`,
+      [unified, to],
+    );
+    const exclude = new Set(exist.rows.map((r) => r.d));
+    if (exclude.size) log(`  库中已有 ${exclude.size} 天，跳过`);
+    const cb = await src.rangeChinaBond(unified, to, exclude);
     all.push(...cb);
     log(`  中债 ${cb.length} 点`);
   } catch (e) {

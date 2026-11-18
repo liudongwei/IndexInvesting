@@ -190,51 +190,60 @@ export async function fetchChinaBondDaily(): Promise<MacroPoint[]> {
   return [];
 }
 
-function parseTreasuryYear(html: string, year: number): MacroPoint[] {
-  const trs = html.match(/<tr[\s\S]*?<\/tr>/g) || [];
-  if (!trs.length) return [];
-  const cellsOf = (t: string) =>
-    (t.match(/<t[hd][^>]*>[\s\S]*?<\/t[hd]>/g) || [])
-      .map((c) => c.replace(/<[^>]+>/g, '').trim());
-  const first = trs[0];
-  if (!first) return [];
-  const header = cellsOf(first);
+/** 美财政部日收益率曲线 CSV（每年一个请求，列头含 "10 Yr"，行序新→旧） */
+function parseTreasuryCsv(text: string): MacroPoint[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) return [];
+  const header = (lines[0].match(/"[^"]+"|[^,]+/g) || []).map((s) => s.replace(/^"|"$/g, '').trim());
   const col10 = header.findIndex((c) => /^10\s*Yr$/i.test(c));
   if (col10 < 0) return [];
   const pts: MacroPoint[] = [];
-  for (const tr of trs.slice(1)) {
-    const cells = cellsOf(tr);
-    if (cells.length <= col10) continue;
+  for (const line of lines.slice(1)) {
+    const cells = line.split(',');
+    const m = (cells[0] || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) continue;
     const v = parseFloat(cells[col10]);
-    // 日期格式 MM/DD/YYYY
-    const m = cells[0].match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (isNaN(v) || !m) continue;
-    pts.push({
-      metric: 'us_10y_yield',
-      date: `${m[3]}-${m[1]}-${m[2]}`,
-      value: v,
-      source: 'treasury',
-    });
+    if (isNaN(v)) continue;
+    pts.push({ metric: 'us_10y_yield', date: `${m[3]}-${m[1]}-${m[2]}`, value: v, source: 'treasury' });
   }
+  pts.sort((a, b) => a.date.localeCompare(b.date));
   return pts;
 }
 
-/** 美财政部日度收益率曲线（TextView，按年一个请求；滞后约 1 个交易日） */
+async function fetchTreasuryYearCsv(year: number): Promise<MacroPoint[]> {
+  const url =
+    `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/${year}/all` +
+    `?type=daily_treasury_yield_curve&field_tdr_date_value=${year}&page&_format=csv`;
+  let text = '';
+  let lastErr: any;
+  for (let i = 0; i < 3; i++) {
+    try {
+      text = await getText(url);
+      if (text.trim().length > 100) break;
+      text = '';
+    } catch (e) {
+      lastErr = e;
+    }
+    await sleep(3000);
+  }
+  if (!text) throw lastErr || new Error(`treasury csv empty for ${year}`);
+  return parseTreasuryCsv(text);
+}
+
+/** 美财政部日度收益率曲线（CSV，按年一个请求；滞后约 1 个交易日） */
 export async function fetchUSTreasuryDaily(): Promise<MacroPoint[]> {
   const year = parseInt(todayCST().slice(0, 4), 10);
-  const all = await fetchUSTreasuryRange(year, year);
+  const all = await fetchTreasuryYearCsv(year);
   return all.slice(-3); // 日采只取最近几行兜底
 }
 
 export async function fetchUSTreasuryRange(fromYear: number, toYear: number): Promise<MacroPoint[]> {
   const pts: MacroPoint[] = [];
   for (let y = fromYear; y <= toYear; y++) {
-    const html = await getText(
-      `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_yield_curve&field_tdr_date_value=${y}`,
-    );
-    pts.push(...parseTreasuryYear(html, y));
-    await sleep(1500);
+    pts.push(...(await fetchTreasuryYearCsv(y)));
+    await sleep(1000);
   }
+  pts.sort((a, b) => a.date.localeCompare(b.date));
   return pts;
 }
 
@@ -405,20 +414,47 @@ export async function probeChinaBondEarliest(): Promise<string | null> {
   return hi;
 }
 
-export async function rangeChinaBond(from: string, to: string): Promise<MacroPoint[]> {
+const isWeekday = (date: string): boolean => {
+  const dow = new Date(date + 'T00:00:00Z').getUTCDay();
+  return dow >= 1 && dow <= 5;
+};
+
+/**
+ * 中债按日拉取（限流防护）：
+ *  - 基础间隔 700ms（实测 0.38s/req 时会丢 ~35% 的交易日）
+ *  - 工作日返回空 → 视为可能被限流，3s 后重试一次
+ *  - exclude：断点续跑时跳过库中已有的日期
+ */
+export async function rangeChinaBond(from: string, to: string, exclude?: Set<string>): Promise<MacroPoint[]> {
   const pts: MacroPoint[] = [];
+  let retried = 0;
+  let throttled = 0;
   const d = new Date(from + 'T00:00:00Z');
   const end = new Date(to + 'T00:00:00Z');
   while (d <= end) {
     const date = d.toISOString().slice(0, 10);
-    try {
-      pts.push(...(await chinabondOn(date)));
-    } catch {
-      /* 单日失败跳过，继续 */
-    }
     d.setTime(d.getTime() + 86400000);
-    await sleep(300);
+    if (exclude && exclude.has(date)) continue;
+    let got: MacroPoint[] = [];
+    try {
+      got = await chinabondOn(date);
+    } catch {
+      got = [];
+    }
+    if (!got.length && isWeekday(date)) {
+      throttled++;
+      await sleep(3000);
+      try {
+        got = await chinabondOn(date);
+      } catch {
+        got = [];
+      }
+      if (got.length) retried++;
+    }
+    pts.push(...got);
+    await sleep(700);
   }
+  if (throttled) console.log(`  中债：${throttled} 个工作日首查为空，重试补回 ${retried} 天`);
   return pts;
 }
 
