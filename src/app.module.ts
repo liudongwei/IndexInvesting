@@ -15,6 +15,7 @@ import { DynamicTrendModule } from './dynamic-trend/dynamic-trend.module';
 import { KLinePatternsModule } from './kline-patterns/kline-patterns.module';
 import { SimulationPortfolioModule } from './simulation-portfolio/simulation-portfolio.module';
 import { GridBacktestModule } from './grid-backtest/grid-backtest.module';
+import { MacroModule } from './macro/macro.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { GridBacktestModule } from './grid-backtest/grid-backtest.module';
     KLinePatternsModule,
     SimulationPortfolioModule,
     GridBacktestModule,
+    MacroModule,
   ],
   controllers: [AppController],
   providers: [AppService],

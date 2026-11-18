@@ -22,6 +22,7 @@ import { SimulationTrades } from './components/SimulationTrades';
 import { TradingInstrumentManagement } from './components/TradingInstrumentManagement';
 import { SimulationAccountManagement } from './components/SimulationAccountManagement';
 import { GridBacktest } from './components/GridBacktest';
+import { MacroDashboard } from './components/MacroDashboard';
 import { AdminLogin } from './components/AdminLogin';
 import { getLatestRanking, getRankingByDate } from './services/api';
 import type { TrendRankingItem } from './types/trend';
@@ -38,6 +39,7 @@ function Navbar() {
   const isDynamicTrend = location.pathname === '/dynamic-trend';
   const isKLinePatterns = location.pathname === '/kline-patterns';
   const isSimulation = location.pathname.startsWith('/simulation');
+  const isMacro = location.pathname === '/macro';
   const isAdmin = location.pathname.startsWith('/admin');
 
   return (
@@ -92,6 +94,14 @@ function Navbar() {
               }`}
             >
               模拟交易
+            </button>
+            <button
+              onClick={() => navigate('/macro')}
+              className={`text-sm font-medium transition-colors ${
+                isMacro ? 'text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              宏观看板
             </button>
           </div>
           <div className="flex items-center gap-4">
@@ -522,6 +532,7 @@ function AppContent() {
         <Route path="/ranking" element={<Navigate to="/" replace />} />
         <Route path="/sectors" element={<RankingPage type={INDEX_TYPE.SECTORS} />} />
         <Route path="/dynamic-trend" element={<DynamicTrendMonitoring />} />
+        <Route path="/macro" element={<MacroDashboard />} />
         <Route path="/kline-patterns" element={<KLinePatternManagement />} />
         <Route path="/eastmoney-import" element={<EastmoneyImportPage />} />
         <Route path="/simulation/dashboard" element={<SimulationDashboard />} />
