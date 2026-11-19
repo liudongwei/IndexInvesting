@@ -1,10 +1,14 @@
 /**
- * 宏观看板数据源（纯函数，无 Nest 依赖；Node 18+ global fetch）
+ * 宏观看板数据源（纯函数，无 Nest 依赖）
  * 服务端部署于新加坡，时区 Asia/Shanghai。所有接口的可达性已实测：
- *   ✅ 新浪 hq/K线、腾讯 qt（gz 全球指数）、中债 API、美财政部 TextView
- *   ⚠️ 东财 push2/push2his 在 SG 被连接级拦截 —— 采集失败即抛错，由上层按“方案B 每日硬重试”处理
+ *   ✅ 新浪 hq/K线、腾讯 qt（gz 全球指数）、中债 API、美财政部 TextView（Node fetch 直连）
+ *   ⚠️ 东财 push2/push2his 风控（2026-11-19 实测）：SG 出口直连被连接级 reset；AWS 东京出口可通。
+ *      对策：东财请求可配置 EM_PROXY_URL（HTTP 代理，生产经 SSH 隧道连 AWS 东京 gost）走 undici
+ *      ProxyAgent；双路自愈：代理/直连失败自动切换，成功者粘滞（见 emText）；未配置 = 纯直连旧行为。
  * 注意：每个点子的 date 一律取数据源自己的 session 日期，不是采集执行日期。
  */
+import { fetch as undiciFetch, ProxyAgent } from 'undici';
+
 export interface MacroPoint {
   metric: string;
   date: string; // YYYY-MM-DD
@@ -17,11 +21,81 @@ const UA =
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/* ================= 东财代理（EM_PROXY_URL）双路自愈 =================
+ * 仅 eastmoney.com 域名生效；其余源维持 Node fetch 直连（可达性已实测）。
+ * emMode 粘滞：当前路请求失败（代理宕机/东财拦截）→ 立即用另一条路重试这一次，
+ * 成功者成为新 mode。代理失效自动退回直连；直连再被拦而代理活着则切回代理。
+ * 进程重启后默认从代理起步（若配置了 EM_PROXY_URL）。 */
+type EmMode = 'proxy' | 'direct';
+let emMode: EmMode = process.env.EM_PROXY_URL ? 'proxy' : 'direct';
+let emProxyAgent: ProxyAgent | null = null;
+
+function emDispatcher(): ProxyAgent {
+  emProxyAgent ||= new ProxyAgent(process.env.EM_PROXY_URL as string);
+  return emProxyAgent;
+}
+
+function isEastmoneyUrl(url: string): boolean {
+  try {
+    return /(^|\.)eastmoney\.com$/i.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** 单次尝试：proxy 模式走 undici ProxyAgent，direct 模式走全局 fetch */
+async function emAttempt(url: string, headers: Record<string, string>, timeoutMs: number, mode: EmMode): Promise<string> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const init: Record<string, unknown> = {
+      headers: { 'User-Agent': UA, ...headers },
+      signal: ctrl.signal,
+      redirect: 'follow',
+    };
+    if (mode === 'proxy') init.dispatcher = emDispatcher();
+    const res =
+      mode === 'proxy' ? await undiciFetch(url, init as never) : await fetch(url, init as RequestInit);
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
+    return await (res as Response).text();
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw new Error(`timeout: ${url}`);
+    throw e;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** 东财请求入口：当前路失败 → 换另一条路重试这一次，成功者粘滞（日志见 pm2 logs） */
+async function emText(
+  url: string,
+  headers: Record<string, string>,
+  timeoutMs: number,
+): Promise<string> {
+  try {
+    return await emAttempt(url, headers, timeoutMs, emMode);
+  } catch (primaryErr) {
+    const alt: EmMode = emMode === 'proxy' ? 'direct' : 'proxy';
+    if (!process.env.EM_PROXY_URL) throw primaryErr; // 单路：无切换余地
+    try {
+      const text = await emAttempt(url, headers, timeoutMs, alt);
+      console.log(
+        `[em-proxy] ${emMode} 路失败(${String((primaryErr as Error)?.message || primaryErr).slice(0, 100)}) → 切换到 ${alt} 并粘滞`,
+      );
+      emMode = alt;
+      return text;
+    } catch (altErr) {
+      throw altErr; // 两路都失败：交由上层 emKline 重试 / 方案B 每日重试
+    }
+  }
+}
+
 function todayCST(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
 }
 
 async function getText(url: string, headers: Record<string, string> = {}, timeoutMs = 25000): Promise<string> {
+  if (isEastmoneyUrl(url)) return emText(url, headers, timeoutMs);
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
