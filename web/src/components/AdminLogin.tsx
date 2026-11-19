@@ -54,6 +54,11 @@ export function AdminLogin() {
         </div>
 
         <form onSubmit={submit} className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-4">
+          {new URLSearchParams(location.search).get('pwdchanged') && (
+            <div className="px-3 py-2 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg">
+              密码修改成功，请使用新密码登录
+            </div>
+          )}
           {error && (
             <div className="px-3 py-2 bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg">
               {error}

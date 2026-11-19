@@ -711,3 +711,23 @@ export async function calculateKLinePatternVerify(params: {
   }
   return response.json();
 }
+
+/**
+ * 修改当前登录用户密码（需登录；Authorization 由全局 fetch 拦截器自动附加）
+ */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    const msg = Array.isArray(error.message) ? error.message.join('；') : error.message;
+    throw new Error(msg || `修改失败: ${response.status}`);
+  }
+  return response.json();
+}

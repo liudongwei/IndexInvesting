@@ -24,6 +24,7 @@ import { SimulationAccountManagement } from './components/SimulationAccountManag
 import { GridBacktest } from './components/GridBacktest';
 import { MacroDashboard } from './components/MacroDashboard';
 import { AdminLogin } from './components/AdminLogin';
+import { ChangePassword } from './components/ChangePassword';
 import { getLatestRanking, getRankingByDate } from './services/api';
 import type { TrendRankingItem } from './types/trend';
 import { INDEX_TYPE, type IndexType } from './types/index-type';
@@ -390,6 +391,7 @@ function AdminLayout() {
       items: [
         { path: '/admin/cron-configs', label: '定时任务', icon: '⏰' },
         { path: '/admin/batch-operations', label: '批量操作', icon: '🔧' },
+        { path: '/admin/change-password', label: '修改密码', icon: '🔑' },
       ],
     },
   ];
@@ -511,6 +513,7 @@ function AdminLayout() {
             <Route path="index-config" element={<IndexConfigManagement />} />
             <Route path="cron-configs" element={<CronConfig />} />
             <Route path="batch-operations" element={<BatchOperations />} />
+            <Route path="change-password" element={<ChangePassword />} />
             <Route path="*" element={<Navigate to="/admin/indices" replace />} />
           </Routes>
         </div>

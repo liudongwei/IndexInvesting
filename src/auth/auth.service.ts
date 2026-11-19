@@ -59,4 +59,20 @@ export class AuthService {
     const { password, ...result } = user;
     return result;
   }
+
+  /**
+   * 修改当前登录用户的密码：先验当前密码，再落新密码（bcrypt）。
+   * JWT 无状态、无法吊销旧 token，前端约定改密成功后清凭证重新登录。
+   */
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.usersService.findOne(userId);
+    if (!user || !(await bcrypt.compare(currentPassword, user.password))) {
+      throw new UnauthorizedException('当前密码不正确');
+    }
+    if (await bcrypt.compare(newPassword, user.password)) {
+      throw new ConflictException('新密码不能与当前密码相同');
+    }
+    await this.usersService.update(userId, { password: newPassword });
+    return { success: true, message: '密码修改成功，请使用新密码重新登录' };
+  }
 }
