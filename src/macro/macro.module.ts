@@ -10,6 +10,6 @@ import { MacroCollectorService } from './macro-collector.service';
   imports: [TypeOrmModule.forFeature([MacroSeries, MacroConfig])],
   controllers: [MacroController],
   providers: [MacroService, MacroCollectorService],
-  exports: [MacroCollectorService],
+  exports: [MacroService, MacroCollectorService],
 })
 export class MacroModule {}

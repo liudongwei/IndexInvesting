@@ -16,6 +16,7 @@ import { KLinePatternsModule } from './kline-patterns/kline-patterns.module';
 import { SimulationPortfolioModule } from './simulation-portfolio/simulation-portfolio.module';
 import { GridBacktestModule } from './grid-backtest/grid-backtest.module';
 import { MacroModule } from './macro/macro.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { MacroModule } from './macro/macro.module';
     SimulationPortfolioModule,
     GridBacktestModule,
     MacroModule,
+    NotificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

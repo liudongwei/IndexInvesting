@@ -12,6 +12,7 @@ import { KLinePatternsModule } from '../kline-patterns/kline-patterns.module';
 import { KLinePatternCronService } from '../kline-patterns/kline-pattern-cron.service';
 import { SimulationPortfolioModule } from '../simulation-portfolio/simulation-portfolio.module';
 import { MacroModule } from '../macro/macro.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { MacroModule } from '../macro/macro.module';
     forwardRef(() => KLinePatternsModule),
     forwardRef(() => SimulationPortfolioModule),
     MacroModule,
+    NotificationModule,
   ],
   controllers: [CronConfigController],
   providers: [CronConfigService],

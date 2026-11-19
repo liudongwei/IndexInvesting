@@ -16,6 +16,7 @@ import { KLinePatternCronService } from '../kline-patterns/kline-pattern-cron.se
 import { KLinePattern } from '../kline-patterns/entities/kline-pattern.entity';
 import { PositionUpdateService } from '../simulation-portfolio/services/position-update.service';
 import { MacroCollectorService } from '../macro/macro-collector.service';
+import { NotificationService } from '../notification/notification.service';
 
 // 预定义的 Cron 任务配置
 export const DEFAULT_CRON_CONFIGS: Partial<CronConfig>[] = [
@@ -149,6 +150,14 @@ export const DEFAULT_CRON_CONFIGS: Partial<CronConfig>[] = [
     isEnabled: true,
   },
   {
+    taskName: 'macroDailyNotify',
+    cronExpression: '0 9 * * *',
+    displayName: '宏观数据日报推送',
+    description: '每天9:00推送昨日宏观看板各指标数据到飞书群（webhook在通知配置页设置；失败记录到lastError次日重试）',
+    category: '通知',
+    isEnabled: true,
+  },
+  {
     taskName: 'simulationPositionUpdateMorning',
     cronExpression: '*/5 9-11 * * 1-5',
     displayName: '模拟持仓更新(早盘)',
@@ -190,6 +199,7 @@ export class CronConfigService implements OnModuleInit {
     private klinePatternCronService: KLinePatternCronService,
     private positionUpdateService: PositionUpdateService,
     private macroCollectorService: MacroCollectorService,
+    private notificationService: NotificationService,
   ) {}
 
   async onModuleInit() {
@@ -292,6 +302,10 @@ export class CronConfigService implements OnModuleInit {
       // 宏观数据采集任务
       case 'macroDailyCollect':
         return this.macroCollectorService.collectAll();
+
+      // 通知任务
+      case 'macroDailyNotify':
+        return this.notificationService.notifyMacroDaily();
 
       // MA 计算任务
       case 'dailyMACalculation':

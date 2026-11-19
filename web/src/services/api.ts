@@ -731,3 +731,51 @@ export async function changePassword(
   }
   return response.json();
 }
+
+/** 通知配置接口类型 */
+export interface NotificationConfigData {
+  id: string;
+  channel: string;
+  webhookUrl: string;
+  signSecret: string | null;
+  enabled: boolean;
+}
+
+/** 获取通知渠道配置 */
+export async function getNotificationConfig(): Promise<{ config: NotificationConfigData | null }> {
+  const response = await fetch(`${API_BASE_URL}/admin/notification-config`);
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return response.json();
+}
+
+/** 保存通知渠道配置 */
+export async function saveNotificationConfig(
+  webhookUrl: string,
+  signSecret: string | null,
+  enabled: boolean,
+): Promise<{ config: NotificationConfigData }> {
+  const response = await fetch(`${API_BASE_URL}/admin/notification-config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ webhookUrl, signSecret, enabled }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    const msg = Array.isArray(error.message) ? error.message.join('；') : error.message;
+    throw new Error(msg || `保存失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+/** 发送测试消息到飞书群 */
+export async function sendNotificationTest(): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`${API_BASE_URL}/admin/notification-config/test`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    const msg = Array.isArray(error.message) ? error.message.join('；') : error.message;
+    throw new Error(msg || `测试失败: ${response.status}`);
+  }
+  return response.json();
+}
