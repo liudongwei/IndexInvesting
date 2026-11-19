@@ -1,7 +1,5 @@
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { SchedulerRegistry } from '@nestjs/schedule';
-import { CronJob } from 'cron';
 import { Repository } from 'typeorm';
 import { MacroSeries } from './entities/macro-series.entity';
 import { MacroService } from './macro.service';
@@ -31,14 +29,13 @@ const EM_METRICS = ['sensex', 'dxy', 'gold_usd', 'nikkei225', 'usdcnh', 'usd_jpy
 
 /**
  * 宏观数据每日采集器（方案B：东财失败不阻断，记录后次日重试；启动时 catch-up 补齐缺口）
- * 服务器时区 Asia/Shanghai，每日 22:10 执行（美股盘中、A股/日股/印度均已收盘、美债当日数据已出）。
+ * 定时调度已迁移至 cron-config 模块统一管理（任务名 macroDailyCollect，面板可启停/改时间/手动执行）。
  */
 @Injectable()
-export class MacroCollectorService implements OnApplicationBootstrap {
+export class MacroCollectorService {
   private readonly logger = new Logger(MacroCollectorService.name);
 
   constructor(
-    private readonly scheduler: SchedulerRegistry,
     private readonly macro: MacroService,
     @InjectRepository(MacroSeries)
     private repo: Repository<MacroSeries>,
@@ -47,17 +44,6 @@ export class MacroCollectorService implements OnApplicationBootstrap {
   onApplicationBootstrap() {
     // 启动 catch-up（补齐停机期间的缺口，含东财失败重试）
     this.collectAll().catch((e) => this.logger.error(`collectAll failed: ${e}`));
-    const job = new CronJob(
-      '10 22 * * *',
-      () => {
-        this.collectAll().catch((e) => this.logger.error(`cron collectAll failed: ${e}`));
-      },
-      null,
-      false,
-      'Asia/Shanghai',
-    );
-    job.start();
-    this.scheduler.addCronJob('macroDailyCollect', job);
   }
 
   private async maxDates(): Promise<Record<string, string>> {

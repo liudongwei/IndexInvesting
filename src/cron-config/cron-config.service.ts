@@ -15,6 +15,7 @@ import { Index } from '../indices/entities/index.entity';
 import { KLinePatternCronService } from '../kline-patterns/kline-pattern-cron.service';
 import { KLinePattern } from '../kline-patterns/entities/kline-pattern.entity';
 import { PositionUpdateService } from '../simulation-portfolio/services/position-update.service';
+import { MacroCollectorService } from '../macro/macro-collector.service';
 
 // 预定义的 Cron 任务配置
 export const DEFAULT_CRON_CONFIGS: Partial<CronConfig>[] = [
@@ -140,6 +141,14 @@ export const DEFAULT_CRON_CONFIGS: Partial<CronConfig>[] = [
   },
   // 模拟交易任务
   {
+    taskName: 'macroDailyCollect',
+    cronExpression: '10 22 * * *',
+    displayName: '宏观数据采集',
+    description: '每天22:10采集宏观看板全部指标（新浪/腾讯/中债/美债/东财；东财被拦时次日重试，面板可手动执行）',
+    category: '数据同步',
+    isEnabled: true,
+  },
+  {
     taskName: 'simulationPositionUpdateMorning',
     cronExpression: '*/5 9-11 * * 1-5',
     displayName: '模拟持仓更新(早盘)',
@@ -180,6 +189,7 @@ export class CronConfigService implements OnModuleInit {
     private klinePatternService: KLinePatternService,
     private klinePatternCronService: KLinePatternCronService,
     private positionUpdateService: PositionUpdateService,
+    private macroCollectorService: MacroCollectorService,
   ) {}
 
   async onModuleInit() {
@@ -278,6 +288,10 @@ export class CronConfigService implements OnModuleInit {
         return this.indexSyncService.handleUSStockSync();
       case 'preciousMetalSync':
         return this.indexSyncService.handlePreciousMetalSync();
+
+      // 宏观数据采集任务
+      case 'macroDailyCollect':
+        return this.macroCollectorService.collectAll();
 
       // MA 计算任务
       case 'dailyMACalculation':
