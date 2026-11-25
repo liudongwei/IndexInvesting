@@ -1,10 +1,10 @@
 /* P2 接口冒烟测试:公开 GET、结构、NaN 泄漏、r4、asOfDate、区间裁剪、404、空响应 */
 const { createRequire } = require('module');
-const req = createRequire('D:/wwwroot/index-investing/package.json');
+const req = createRequire(require('path').join(__dirname, '..', 'package.json'));
 const fs = require('fs');
 const { Client } = req('pg');
 const env = {};
-for (const line of fs.readFileSync('D:/wwwroot/index-investing/.env','utf8').split(/\r?\n/)) { const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/); if (m) env[m[1]] = m[2]; }
+for (const line of fs.readFileSync(require('path').join(__dirname, '..', '.env'),'utf8').split(/\r?\n/)) { const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/); if (m) env[m[1]] = m[2]; }
 const http = require('http');
 function get(path) {
   return new Promise((resolve, reject) => {

@@ -5,7 +5,7 @@ const fs = require('fs');
 const { Client } = req('pg');
 const http = require('http');
 const env = {};
-for (const line of fs.readFileSync('D:/wwwroot/index-investing/.env','utf8').split(/\r?\n/)) { const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/); if (m) env[m[1]] = m[2]; }
+for (const line of fs.readFileSync(require('path').join(__dirname, '..', '.env'),'utf8').split(/\r?\n/)) { const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/); if (m) env[m[1]] = m[2]; }
 function call(path, method) {
   return new Promise((resolve,reject)=>{
     const r = http.request({host:'localhost',port:3100,path,method,headers:{'Authorization':'Bearer '+fs.readFileSync(process.env.LOCALAPPDATA+'/Temp/admin-token.txt','utf8').trim()},timeout:180000}, res=>{

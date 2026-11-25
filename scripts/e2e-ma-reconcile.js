@@ -8,7 +8,7 @@ const req = createRequire(require('path').join(__dirname, '..', 'package.json'))
 const fs = require('fs');
 const { Client } = req('pg');
 const env = {};
-for (const line of fs.readFileSync('D:/wwwroot/index-investing/.env', 'utf8').split(/\r?\n/)) { const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/); if (m) env[m[1]] = m[2]; }
+for (const line of fs.readFileSync(require('path').join(__dirname, '..', '.env'), 'utf8').split(/\r?\n/)) { const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/); if (m) env[m[1]] = m[2]; }
 const c = new Client({ host: env.DB_HOST||'localhost', port: 5432, user: env.DB_USERNAME||'postgres', password: env.DB_PASSWORD||'jack@123', database: env.DB_DATABASE||'index_investing' });
 const dstr = (d) => (typeof d === 'string' ? d.slice(0, 10) : `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
 
