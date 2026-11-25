@@ -1,6 +1,6 @@
 /** 状态回放抽样:从沪深300全历史抽 10 天(覆盖不同状态),打印 K线/指标上下文 + 状态判定,供人工核验 */
 const { createRequire } = require('module');
-const req = createRequire('D:/wwwroot/index-investing/package.json');
+const req = createRequire(require('path').join(__dirname, '..', 'package.json'));
 const fs = require('fs');
 const { Client } = req('pg');
 const env = {};

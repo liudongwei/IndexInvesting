@@ -1,6 +1,6 @@
 /* 服务路径重算测试:删恒生指数三表数据 → cron 手动执行 → 与删除前值对账 */
 const { createRequire } = require('module');
-const req = createRequire('D:/wwwroot/index-investing/package.json');
+const req = createRequire(require('path').join(__dirname, '..', 'package.json'));
 const fs = require('fs');
 const { Client } = req('pg');
 const http = require('http');

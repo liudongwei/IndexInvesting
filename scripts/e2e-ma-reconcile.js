@@ -4,7 +4,7 @@
  * ma120/250 抽样与独立 SQL 窗口均值比对 ≤1e-4...实际 MA 落库精度 r2(0.01),容差 0.0051。
  */
 const { createRequire } = require('module');
-const req = createRequire('D:/wwwroot/index-investing/package.json');
+const req = createRequire(require('path').join(__dirname, '..', 'package.json'));
 const fs = require('fs');
 const { Client } = req('pg');
 const env = {};

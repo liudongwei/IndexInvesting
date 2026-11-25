@@ -6,7 +6,7 @@
  * - 用法:node scripts/e2e-indicators-reconcile.js [--index=沪深300]
  */
 const { createRequire } = require('module');
-const req = createRequire('D:/wwwroot/index-investing/package.json');
+const req = createRequire(require('path').join(__dirname, '..', 'package.json'));
 const fs = require('fs');
 const { Client } = req('pg');
 const env = {};
