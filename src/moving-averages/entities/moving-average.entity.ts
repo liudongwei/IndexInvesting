@@ -36,6 +36,12 @@ export class MovingAverage {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true, comment: '60日均线' })
   ma60: number | null;
 
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true, comment: '120日均线' })
+  ma120: number | null;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true, comment: '250日均线' })
+  ma250: number | null;
+
   @Column({ type: 'decimal', precision: 10, scale: 4, nullable: true, comment: '偏离率（现价相对MA20）' })
   deviationRate: number | null;
 

@@ -17,6 +17,7 @@ import { KLinePattern } from '../kline-patterns/entities/kline-pattern.entity';
 import { PositionUpdateService } from '../simulation-portfolio/services/position-update.service';
 import { MacroCollectorService } from '../macro/macro-collector.service';
 import { NotificationService } from '../notification/notification.service';
+import { IndicatorsCronService } from '../indicators/indicators-cron.service';
 
 // 预定义的 Cron 任务配置
 export const DEFAULT_CRON_CONFIGS: Partial<CronConfig>[] = [
@@ -158,6 +159,30 @@ export const DEFAULT_CRON_CONFIGS: Partial<CronConfig>[] = [
     isEnabled: true,
   },
   {
+    taskName: 'indicatorBatchAStock',
+    cronExpression: '25 15 * * *',
+    displayName: '指标计算(A股批次)',
+    description: '每天15:25全量重算A股/台湾/日韩指数技术指标并落库（15:10数据同步后；跳过守卫幂等，无新数据零写入）',
+    category: '指标计算',
+    isEnabled: true,
+  },
+  {
+    taskName: 'indicatorBatchHkStock',
+    cronExpression: '25 16 * * *',
+    displayName: '指标计算(港股批次)',
+    description: '每天16:25全量重算港股指数技术指标并落库（16:00收盘后）',
+    category: '指标计算',
+    isEnabled: true,
+  },
+  {
+    taskName: 'indicatorBatchUsPrecious',
+    cronExpression: '30 6 * * *',
+    displayName: '指标计算(美股+贵金属批次)',
+    description: '每天06:30全量重算美股/贵金属/欧洲等其余市场技术指标并落库（欧美收盘+贵金属结算后）',
+    category: '指标计算',
+    isEnabled: true,
+  },
+  {
     taskName: 'simulationPositionUpdateMorning',
     cronExpression: '*/5 9-11 * * 1-5',
     displayName: '模拟持仓更新(早盘)',
@@ -200,6 +225,7 @@ export class CronConfigService implements OnModuleInit {
     private positionUpdateService: PositionUpdateService,
     private macroCollectorService: MacroCollectorService,
     private notificationService: NotificationService,
+    private indicatorsCronService: IndicatorsCronService,
   ) {}
 
   async onModuleInit() {
@@ -306,6 +332,14 @@ export class CronConfigService implements OnModuleInit {
       // 通知任务
       case 'macroDailyNotify':
         return this.notificationService.notifyMacroDaily();
+
+      // 技术指标批次任务
+      case 'indicatorBatchAStock':
+        return this.indicatorsCronService.runBatch('aStock');
+      case 'indicatorBatchHkStock':
+        return this.indicatorsCronService.runBatch('hkStock');
+      case 'indicatorBatchUsPrecious':
+        return this.indicatorsCronService.runBatch('usPrecious');
 
       // MA 计算任务
       case 'dailyMACalculation':

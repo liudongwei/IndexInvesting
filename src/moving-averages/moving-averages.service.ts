@@ -13,6 +13,8 @@ export interface MACalculationResult {
   ma10: number | null;
   ma20: number | null;
   ma60: number | null;
+  ma120: number | null;
+  ma250: number | null;
   deviationRate: number | null;
   ma5SampleCount: number;
   ma10SampleCount: number;
@@ -80,6 +82,14 @@ export class MovingAveragesService {
         ma60Data.map((h) => Number(h.closePrice)),
       );
 
+      // 计算MA120（需要当前及前119天）
+      const ma120Data = sortedHistories.slice(Math.max(0, i - 119), i + 1);
+      const ma120 = ma120Data.length >= 120 ? this.calculateAverage(ma120Data.map((h) => Number(h.closePrice))) : null;
+
+      // 计算MA250（需要当前及前249天）
+      const ma250Data = sortedHistories.slice(Math.max(0, i - 249), i + 1);
+      const ma250 = ma250Data.length >= 250 ? this.calculateAverage(ma250Data.map((h) => Number(h.closePrice))) : null;
+
       // 计算偏离率（相对MA20）
       let deviationRate: number | null = null;
       if (ma20 !== null) {
@@ -93,6 +103,8 @@ export class MovingAveragesService {
         ma10,
         ma20,
         ma60,
+        ma120,
+        ma250,
         deviationRate,
         ma5SampleCount: ma5Data.length,
         ma10SampleCount: ma10Data.length,
@@ -261,9 +273,9 @@ export class MovingAveragesService {
       };
     }
 
-    // 获取需要计算的历史数据（从MA最新日期前59天开始，确保MA60能正确计算）
+    // 获取需要计算的历史数据（从MA最新日期前249天开始，确保MA250能正确计算）
     const startDate = new Date(latestMADate);
-    startDate.setDate(startDate.getDate() - 59); // MA60需要前59天数据
+    startDate.setDate(startDate.getDate() - 249); // MA250需要前249天数据
 
     const histories = await this.historyRepository.find({
       where: {

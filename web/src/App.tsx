@@ -23,6 +23,7 @@ import { TradingInstrumentManagement } from './components/TradingInstrumentManag
 import { SimulationAccountManagement } from './components/SimulationAccountManagement';
 import { GridBacktest } from './components/GridBacktest';
 import { MacroDashboard } from './components/MacroDashboard';
+import TechnicalIndicators from './components/TechnicalIndicators';
 import { AdminLogin } from './components/AdminLogin';
 import { ChangePassword } from './components/ChangePassword';
 import { NotificationConfig } from './components/NotificationConfig';
@@ -42,6 +43,7 @@ function Navbar() {
   const isKLinePatterns = location.pathname === '/kline-patterns';
   const isSimulation = location.pathname.startsWith('/simulation');
   const isMacro = location.pathname === '/macro';
+  const isIndicators = location.pathname === '/indicators';
   const isAdmin = location.pathname.startsWith('/admin');
 
   return (
@@ -104,6 +106,14 @@ function Navbar() {
               }`}
             >
               宏观看板
+            </button>
+            <button
+              onClick={() => navigate('/indicators')}
+              className={`text-sm font-medium transition-colors ${
+                isIndicators ? 'text-white' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              技术指标
             </button>
           </div>
           <div className="flex items-center gap-4">
@@ -375,6 +385,7 @@ function AdminLayout() {
         { path: '/admin/trend-analysis', label: '趋势分析', icon: '📉' },
         { path: '/admin/kline-patterns', label: 'K线形态', icon: '🕯️' },
         { path: '/admin/kline-pattern-verification', label: '形态验证', icon: '🔍' },
+        { path: '/indicators', label: '技术指标', icon: '🧭' },
       ],
     },
     {
@@ -539,6 +550,7 @@ function AppContent() {
         <Route path="/sectors" element={<RankingPage type={INDEX_TYPE.SECTORS} />} />
         <Route path="/dynamic-trend" element={<DynamicTrendMonitoring />} />
         <Route path="/macro" element={<MacroDashboard />} />
+        <Route path="/indicators" element={<TechnicalIndicators />} />
         <Route path="/kline-patterns" element={<KLinePatternManagement />} />
         <Route path="/eastmoney-import" element={<EastmoneyImportPage />} />
         <Route path="/simulation/dashboard" element={<SimulationDashboard />} />

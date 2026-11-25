@@ -17,6 +17,7 @@ import { SimulationPortfolioModule } from './simulation-portfolio/simulation-por
 import { GridBacktestModule } from './grid-backtest/grid-backtest.module';
 import { MacroModule } from './macro/macro.module';
 import { NotificationModule } from './notification/notification.module';
+import { IndicatorsModule } from './indicators/indicators.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { NotificationModule } from './notification/notification.module';
     GridBacktestModule,
     MacroModule,
     NotificationModule,
+    IndicatorsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

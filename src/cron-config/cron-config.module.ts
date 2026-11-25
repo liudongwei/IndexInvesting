@@ -13,6 +13,7 @@ import { KLinePatternCronService } from '../kline-patterns/kline-pattern-cron.se
 import { SimulationPortfolioModule } from '../simulation-portfolio/simulation-portfolio.module';
 import { MacroModule } from '../macro/macro.module';
 import { NotificationModule } from '../notification/notification.module';
+import { IndicatorsModule } from '../indicators/indicators.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { NotificationModule } from '../notification/notification.module';
     forwardRef(() => SimulationPortfolioModule),
     MacroModule,
     NotificationModule,
+    IndicatorsModule,
   ],
   controllers: [CronConfigController],
   providers: [CronConfigService],
