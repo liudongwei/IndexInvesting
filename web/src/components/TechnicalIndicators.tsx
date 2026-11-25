@@ -15,7 +15,8 @@ import {
   Time,
 } from 'lightweight-charts';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+// 项目约定:VITE_API_BASE_URL 生产=/api(已含全局前缀),开发=http://localhost:3000/api —— 路径一律不再拼 /api
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 const RANGE_OPTIONS = [
   { value: '3m', label: '3月' },
@@ -103,7 +104,7 @@ function Main() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/indices`);
+        const res = await fetch(`${API_BASE}/indices`);
         const j = await res.json();
         const list: Instrument[] = (Array.isArray(j) ? j : j.data ?? []).filter((i: any) => i.isActive !== false);
         setInstruments(list);
@@ -118,7 +119,7 @@ function Main() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/indicators/${selectedId}?range=${range}`);
+      const res = await fetch(`${API_BASE}/indicators/${selectedId}?range=${range}`);
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.message || `接口返回 ${res.status}`);
